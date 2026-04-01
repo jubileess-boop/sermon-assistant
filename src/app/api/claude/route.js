@@ -23,6 +23,9 @@ export async function POST(request) {
     const data = await response.json()
     return Response.json(data)
   } catch (error) {
-    return Response.json({ error: { message: error.message } }, { status: 500 })
+    return Response.json(
+      { error: { message: error.message } },
+      { status: 500 }
+    )
   }
 }
