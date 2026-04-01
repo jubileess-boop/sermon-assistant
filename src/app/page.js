@@ -205,7 +205,7 @@ function makeRefLabel(book, fc, fv, tc, tv) {
 }
 
 // Claude API 호출 - 서버 프록시 사용 (API 키 보호)
-async function callClaude(system, userMsg, maxTokens = 400) {
+async function callClaude(system, userMsg, maxTokens = 4096) {
   const res = await fetch('/api/claude', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -410,7 +410,7 @@ export default function Home() {
     if (!verseReady) return
     setSLoading(true); setSermonOut('')
     const userMsg = `성경 구절: ${refLabel}\n한국어 개역개정:\n${korLines.join('\n')}${engText ? `\n\n영어 KJV:\n"${engText}"` : ''}\n배경: ${korCtx}\n\n위 말씀을 바탕으로 ${lv.label}(${lv.age}) 맞춤 설교를 작성해주세요.`
-    try { const out = await callClaude(makeSystemPrompt(level, activeLibObj?.analysis), userMsg, 1500); setSermonOut(out) }
+    try { const out = await callClaude(makeSystemPrompt(level, activeLibObj?.analysis), userMsg, 4096); setSermonOut(out) }
     catch(e) { setSermonOut('❌ 설교 생성 오류: ' + e.message) }
     setSLoading(false)
   }
