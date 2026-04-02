@@ -120,6 +120,17 @@ const LEVELS = {
 };
 
 // 키아즘 프레임 옵션
+// 설교 주제 카테고리
+var SERMON_TOPICS = [
+  {value:"하나님",   label:"하나님",   emoji:"✝️",  color:"#1D4ED8"},
+  {value:"그리스도", label:"그리스도", emoji:"🕊️", color:"#7C3AED"},
+  {value:"성령님",   label:"성령님",   emoji:"🔥",  color:"#EA580C"},
+  {value:"인간",     label:"인간",     emoji:"🧑",  color:"#0F766E"},
+  {value:"교회",     label:"교회",     emoji:"⛪",  color:"#4F46E5"},
+  {value:"구원",     label:"구원",     emoji:"🙏",  color:"#B45309"},
+  {value:"종말",     label:"종말",     emoji:"⏳",  color:"#BE123C"},
+];
+
 const CHIASM_FRAMES = [
   {value:"5", label:"5단 (A-B-C-B'-A')"},
   {value:"6", label:"6단 (A-B-C-C'-B'-A')"},
@@ -336,6 +347,13 @@ export default function App() {
   const [upLoading,  setUpLoading]  = useState(false);
   const [upError,    setUpError]    = useState("");
   const [upProgress, setUpProgress] = useState("");
+  const [upBookCat,  setUpBookCat]  = useState("");
+  const [upTopics,   setUpTopics]   = useState([]);
+  const [libSubTab,  setLibSubTab]  = useState("upload");
+  const [libSearch,  setLibSearch]  = useState("");
+  const [libBookFilter, setLibBookFilter] = useState("");
+  const [libTopicFilter,setLibTopicFilter]= useState("");
+  const [libOpenId,  setLibOpenId]  = useState(null);
   const fileRef = useRef();
 
   var bookInfo    = ALL_BOOKS.find(function(b){return b.name===book;});
@@ -618,10 +636,10 @@ ${korLines.join("\n")}
       var prompt="아래 설교 원고를 분석하여 이 목사님의 고유한 설교 스타일을 파악해주세요.\n반드시 순수 JSON만 출력하세요:\n{\"preachingStyle\":\"설교 전달 방식 2~3줄\",\"toneAndVoice\":\"언어 톤과 어조 1~2줄\",\"structurePattern\":\"구조 패턴 1~2줄\",\"theologicalEmphasis\":\"신학적 강조점 2~3줄\",\"keyPhrases\":\"자주 쓰는 표현 3~5가지 (쉼표 구분)\",\"applicationStyle\":\"삶 적용 방식 1~2줄\",\"summary\":\"전체 요약 2~3줄\"}\n\n설교 원고:\n"+combinedText.slice(0,4000);
       var raw=await callClaude("너는 설교 스타일 분석 전문가야. 반드시 순수 JSON만 출력해.",prompt,800);
       var analysis=JSON.parse(raw.replace(/```json|```/g,"").trim());
-      var entry={id:Date.now(),name:upName.trim(),analysis:analysis,date:new Date().toLocaleDateString("ko-KR"),fileCount:upFiles.length};
+      var entry={id:Date.now(),name:upName.trim(),analysis:analysis,date:new Date().toLocaleDateString("ko-KR"),fileCount:upFiles.length,bookCat:upBookCat,topics:upTopics.slice(),text:combinedText.slice(0,8000)};
       var updated=library.concat([entry]);setLibrary(updated);await storageSave(STORAGE_LIBRARY,updated);
-      setActiveLib(entry.id);setUpName("");setUpFiles([]);setUpProgress("");
-      if(fileRef.current)fileRef.current.value="";setMainTab("bible");
+      setActiveLib(entry.id);setUpName("");setUpFiles([]);setUpProgress("");setUpBookCat("");setUpTopics([]);
+      if(fileRef.current)fileRef.current.value="";setMainTab("library");setLibSubTab("sermons");
     }catch(e){setUpError("분석 오류: "+e.message);}
     setUpLoading(false);
   }
@@ -1174,27 +1192,240 @@ ${korLines.join("\n")}
         {/* ════ 라이브러리 탭 ════ */}
         {mainTab==="library"&&(
           <div>
-            <div style={sy.card}>
-              <span style={sy.badge}>설교 파일 업로드</span>
-              <div style={sy.cardTitle}>📤 나의 설교 스타일 등록</div>
-              <p style={{fontSize:13,color:"#6B7280",marginBottom:16,lineHeight:1.7}}>설교 원고를 업로드하면 AI가 목사님의 고유한 설교 스타일을 분석합니다.<br/><b>(pdf · docx · txt)</b></p>
-              <div style={{marginBottom:12}}><div style={sy.selLabel}>📛 스타일 이름</div><input style={sy.nameInput} placeholder="예: 홍길동 목사 설교 스타일" value={upName} onChange={function(e){setUpName(e.target.value);}}/></div>
-              <div style={{marginBottom:12}}>
-                <div style={sy.selLabel}>📁 파일 선택</div>
-                <div style={sy.dropArea} onClick={function(){if(fileRef.current)fileRef.current.click();}}>
-                  <input ref={fileRef} type="file" accept=".pdf,.docx,.txt" multiple style={{display:"none"}} onChange={function(e){setUpFiles(Array.from(e.target.files));}}/>
-                  {upFiles.length===0?<div style={{textAlign:"center"}}><div style={{fontSize:32,marginBottom:8}}>📂</div><p style={{fontSize:14,color:"#6B7280"}}>클릭하여 파일 선택</p><p style={{fontSize:12,color:"#9CA3AF",marginTop:4}}>PDF · DOCX · TXT 지원</p></div>:<div style={{width:"100%"}}>{upFiles.map(function(f,i){var icon=f.name.endsWith(".pdf")?"📄":f.name.endsWith(".docx")?"📝":"📃";return <div key={i} style={sy.fileItem}><span style={{fontSize:16}}>{icon}</span><span style={{fontSize:13,color:"#374151",flex:1}}>{f.name}</span><span style={{fontSize:11,color:"#9CA3AF"}}>{(f.size/1024).toFixed(0)}KB</span></div>;})}<p style={{fontSize:12,color:"#6B7280",marginTop:8,textAlign:"center"}}>클릭하여 파일 변경</p></div>}
+            {/* 라이브러리 서브탭 */}
+            <div style={{display:"flex",gap:8,marginBottom:12}}>
+              {[["upload","📤 설교 등록"],["sermons","📖 설교 원문 열람"],["styles","🎨 스타일 분석"]].map(function(item){
+                var k=item[0];var l=item[1];
+                return(
+                  <button key={k}
+                    style={{flex:1,padding:"9px 6px",borderRadius:12,border:libSubTab===k?"2px solid #1D4ED8":"2px solid rgba(255,255,255,.15)",background:libSubTab===k?"rgba(255,255,255,.97)":"rgba(255,255,255,.07)",color:libSubTab===k?"#1D4ED8":"#94A3B8",fontSize:12,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}
+                    onClick={function(){setLibSubTab(k);}}>
+                    {l}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ── 설교 등록 탭 ── */}
+            {libSubTab==="upload"&&(
+              <div>
+                <div style={sy.card}>
+                  <span style={sy.badge}>설교 파일 업로드</span>
+                  <div style={sy.cardTitle}>📤 나의 설교 파일 등록</div>
+                  <p style={{fontSize:13,color:"#6B7280",marginBottom:16,lineHeight:1.7}}>
+                    설교 원고를 업로드하면 <b>원문이 저장</b>되고 AI가 <b>스타일을 분석</b>합니다.<br/>
+                    카테고리를 지정하면 나중에 쉽게 찾을 수 있습니다. <b>(pdf · docx · txt)</b>
+                  </p>
+
+                  {/* 설교 이름 */}
+                  <div style={{marginBottom:12}}>
+                    <div style={sy.selLabel}>📛 설교 제목</div>
+                    <input style={sy.nameInput} placeholder="예: 2024년 부활절 설교" value={upName} onChange={function(e){setUpName(e.target.value);}}/>
+                  </div>
+
+                  {/* 성경책 카테고리 */}
+                  <div style={{marginBottom:12}}>
+                    <div style={sy.selLabel}>📖 성경책 카테고리</div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {Object.keys(BIBLE_BOOKS).map(function(t){
+                        var books=BIBLE_BOOKS[t];
+                        return(
+                          <div key={t} style={{flex:1,minWidth:150}}>
+                            <div style={{fontSize:11,color:"#9CA3AF",marginBottom:4}}>{t}</div>
+                            <select style={sy.sel} value={upBookCat} onChange={function(e){setUpBookCat(e.target.value);}}>
+                              <option value="">성경책 선택...</option>
+                              {books.map(function(b){return <option key={b.name} value={b.name}>{b.name}</option>;})}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 주제 카테고리 */}
+                  <div style={{marginBottom:16}}>
+                    <div style={sy.selLabel}>🏷️ 주제 카테고리 (복수 선택 가능)</div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {SERMON_TOPICS.map(function(topic){
+                        var isOn = upTopics.indexOf(topic.value)>-1;
+                        return(
+                          <button key={topic.value}
+                            style={{padding:"6px 14px",borderRadius:20,border:isOn?"2px solid "+topic.color:"1.5px solid #E5E7EB",background:isOn?topic.color:"#F9FAFB",color:isOn?"#fff":"#374151",fontSize:12,fontWeight:isOn?700:400,fontFamily:"'Noto Sans KR',sans-serif"}}
+                            onClick={function(){
+                              if(isOn) setUpTopics(upTopics.filter(function(t){return t!==topic.value;}));
+                              else setUpTopics(upTopics.concat([topic.value]));
+                            }}>
+                            {topic.emoji} {topic.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 파일 선택 */}
+                  <div style={{marginBottom:12}}>
+                    <div style={sy.selLabel}>📁 파일 선택</div>
+                    <div style={sy.dropArea} onClick={function(){if(fileRef.current)fileRef.current.click();}}>
+                      <input ref={fileRef} type="file" accept=".pdf,.docx,.txt" multiple style={{display:"none"}} onChange={function(e){setUpFiles(Array.from(e.target.files));}}/>
+                      {upFiles.length===0
+                        ?<div style={{textAlign:"center"}}><div style={{fontSize:32,marginBottom:8}}>📂</div><p style={{fontSize:14,color:"#6B7280"}}>클릭하여 파일 선택</p><p style={{fontSize:12,color:"#9CA3AF",marginTop:4}}>PDF · DOCX · TXT 지원</p></div>
+                        :<div style={{width:"100%"}}>{upFiles.map(function(f,i){var icon=f.name.endsWith(".pdf")?"📄":f.name.endsWith(".docx")?"📝":"📃";return <div key={i} style={sy.fileItem}><span style={{fontSize:16}}>{icon}</span><span style={{fontSize:13,color:"#374151",flex:1}}>{f.name}</span><span style={{fontSize:11,color:"#9CA3AF"}}>{(f.size/1024).toFixed(0)}KB</span></div>;})}<p style={{fontSize:12,color:"#6B7280",marginTop:8,textAlign:"center"}}>클릭하여 파일 변경</p></div>
+                      }
+                    </div>
+                  </div>
+
+                  {upError&&<p style={{color:"#DC2626",fontSize:13,marginBottom:8}}>⚠️ {upError}</p>}
+                  {upProgress&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#EFF6FF",borderRadius:10,marginBottom:10}}><div style={sy.spinSm2}/><span style={{fontSize:13,color:"#1D4ED8"}}>{upProgress}</span></div>}
+                  <button style={Object.assign({},sy.genBtn,{background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",opacity:upLoading?0.7:1,marginTop:4})} onClick={handleUpload} disabled={upLoading}>
+                    {upLoading?<span style={{display:"flex",alignItems:"center",gap:8}}><div style={sy.spinSm}/>등록 중...</span>:<span>🔍 업로드 및 등록</span>}
+                  </button>
                 </div>
               </div>
-              {upError&&<p style={{color:"#DC2626",fontSize:13,marginBottom:8}}>⚠️ {upError}</p>}
-              {upProgress&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#EFF6FF",borderRadius:10,marginBottom:10}}><div style={sy.spinSm2}/><span style={{fontSize:13,color:"#1D4ED8"}}>{upProgress}</span></div>}
-              <button style={Object.assign({},sy.genBtn,{background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",opacity:upLoading?0.7:1,marginTop:4})} onClick={handleUpload} disabled={upLoading}>{upLoading?<span style={{display:"flex",alignItems:"center",gap:8}}><div style={sy.spinSm}/>분석 중...</span>:<span>🔍 업로드 및 스타일 분석</span>}</button>
-            </div>
-            {library.length===0?<div style={sy.emptyBox}><div style={{fontSize:40,marginBottom:12}}>📚</div><p style={{color:"#6B7280",fontSize:14}}>등록된 스타일이 없습니다.</p></div>
-              :<div><div style={{fontSize:13,fontWeight:700,color:"#CBD5E1",marginBottom:10}}>저장된 스타일 ({library.length}개)</div>
-                {library.map(function(lib){var isActive=activeLib===lib.id;return(<div key={lib.id} style={Object.assign({},sy.libCard,isActive?sy.libCardOn:{})}><div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"16px 18px"}}><div style={{flex:1}}><div style={{fontSize:15,fontWeight:700,color:"#111827"}}>{lib.name}</div><div style={{fontSize:12,color:"#9CA3AF",marginTop:2}}>{lib.date} · 파일 {lib.fileCount}개</div></div><div style={{display:"flex",gap:8}}><button style={Object.assign({},sy.useBtn,isActive?sy.useBtnOn:{})} onClick={function(){if(isActive){setActiveLib(null);}else{setActiveLib(lib.id);setMainTab("bible");}}}>{isActive?"✓ 사용 중":"사용하기"}</button><button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>🗑️</button></div></div>{lib.analysis&&(<div style={sy.analysisBox}>{[["설교 스타일",lib.analysis.preachingStyle],["언어 톤",lib.analysis.toneAndVoice],["구조 패턴",lib.analysis.structurePattern],["신학 강조",lib.analysis.theologicalEmphasis],["자주 쓰는 표현",lib.analysis.keyPhrases]].map(function(row,ri){return <div key={ri} style={sy.aRow}><span style={sy.aLabel}>{row[0]}</span><span style={sy.aVal}>{row[1]}</span></div>;})}<div style={Object.assign({},sy.aRow,{borderBottom:"none"})}><span style={sy.aLabel}>종합 요약</span><span style={Object.assign({},sy.aVal,{color:"#1D4ED8",fontWeight:600})}>{lib.analysis.summary}</span></div></div>)}</div>);})}
+            )}
+
+            {/* ── 설교 원문 열람 탭 ── */}
+            {libSubTab==="sermons"&&(
+              <div>
+                <div style={sy.card}>
+                  <div style={{fontSize:15,fontWeight:700,color:"#111827",fontFamily:"'Noto Serif KR',serif",marginBottom:12}}>
+                    📖 등록된 설교 원문 ({library.length}편)
+                  </div>
+
+                  {/* 검색 */}
+                  <input style={{...sy.nameInput,marginBottom:12}} placeholder="🔍 설교 제목으로 검색..." value={libSearch} onChange={function(e){setLibSearch(e.target.value);}}/>
+
+                  {/* 성경책 필터 */}
+                  <div style={{marginBottom:10}}>
+                    <div style={sy.selLabel}>📖 성경책별 보기</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <button style={{padding:"4px 12px",borderRadius:20,border:libBookFilter===""?"2px solid #1D4ED8":"1.5px solid #E5E7EB",background:libBookFilter===""?"#1D4ED8":"#F9FAFB",color:libBookFilter===""?"#fff":"#374151",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif"}}
+                        onClick={function(){setLibBookFilter("");}}>전체</button>
+                      {Array.from(new Set(library.filter(function(l){return l.bookCat;}).map(function(l){return l.bookCat;}))).map(function(book){
+                        return(
+                          <button key={book}
+                            style={{padding:"4px 12px",borderRadius:20,border:libBookFilter===book?"2px solid #1D4ED8":"1.5px solid #E5E7EB",background:libBookFilter===book?"#1D4ED8":"#F9FAFB",color:libBookFilter===book?"#fff":"#374151",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif"}}
+                            onClick={function(){setLibBookFilter(book);}}>
+                            {book}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 주제 필터 */}
+                  <div style={{marginBottom:4}}>
+                    <div style={sy.selLabel}>🏷️ 주제별 보기</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <button style={{padding:"4px 12px",borderRadius:20,border:libTopicFilter===""?"2px solid #6B7280":"1.5px solid #E5E7EB",background:libTopicFilter===""?"#6B7280":"#F9FAFB",color:libTopicFilter===""?"#fff":"#374151",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif"}}
+                        onClick={function(){setLibTopicFilter("");}}>전체</button>
+                      {SERMON_TOPICS.map(function(topic){
+                        return(
+                          <button key={topic.value}
+                            style={{padding:"4px 12px",borderRadius:20,border:libTopicFilter===topic.value?"2px solid "+topic.color:"1.5px solid #E5E7EB",background:libTopicFilter===topic.value?topic.color:"#F9FAFB",color:libTopicFilter===topic.value?"#fff":"#374151",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif"}}
+                            onClick={function(){setLibTopicFilter(topic.value);}}>
+                            {topic.emoji} {topic.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 설교 목록 */}
+                {(function(){
+                  var filtered = library.filter(function(l){
+                    var mSearch = !libSearch || l.name.indexOf(libSearch)>-1;
+                    var mBook   = !libBookFilter || l.bookCat===libBookFilter;
+                    var mTopic  = !libTopicFilter || (l.topics&&l.topics.indexOf(libTopicFilter)>-1);
+                    return mSearch&&mBook&&mTopic;
+                  });
+                  if(filtered.length===0) return <div style={sy.emptyBox}><p style={{color:"#9CA3AF",fontSize:13}}>해당 조건의 설교가 없습니다.</p></div>;
+                  return filtered.map(function(lib){
+                    var isOpen = libOpenId===lib.id;
+                    return(
+                      <div key={lib.id} style={{...sy.libCard,border:"2px solid transparent"}}>
+                        <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"16px 18px"}}>
+                          <div style={{width:40,height:40,borderRadius:12,background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>📖</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:15,fontWeight:700,color:"#111827",marginBottom:4}}>{lib.name}</div>
+                            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:4}}>
+                              {lib.bookCat&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:20,background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",fontWeight:600}}>📖 {lib.bookCat}</span>}
+                              {lib.topics&&lib.topics.map(function(t){
+                                var topic=SERMON_TOPICS.find(function(s){return s.value===t;});
+                                if(!topic)return null;
+                                return <span key={t} style={{fontSize:11,padding:"2px 8px",borderRadius:20,background:topic.color+"22",color:topic.color,border:"1px solid "+topic.color+"44",fontWeight:600}}>{topic.emoji} {topic.label}</span>;
+                              })}
+                            </div>
+                            <div style={{fontSize:11,color:"#9CA3AF"}}>{lib.date} · 파일 {lib.fileCount}개</div>
+                          </div>
+                          <div style={{display:"flex",gap:6,flexShrink:0}}>
+                            {lib.text&&(
+                              <button style={sy.viewBtn} onClick={function(){setLibOpenId(isOpen?null:lib.id);}}>
+                                {isOpen?"접기":"📄 원문"}
+                              </button>
+                            )}
+                            <button style={Object.assign({},sy.useBtn,activeLib===lib.id?sy.useBtnOn:{})}
+                              onClick={function(){if(activeLib===lib.id){setActiveLib(null);}else{setActiveLib(lib.id);setMainTab("bible");}}}>
+                              {activeLib===lib.id?"✓ 사용 중":"스타일 적용"}
+                            </button>
+                            <button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>🗑️</button>
+                          </div>
+                        </div>
+                        {/* 원문 열람 */}
+                        {isOpen&&lib.text&&(
+                          <div style={{borderTop:"1px solid #E5E7EB",padding:"16px 18px",background:"#F8FAFF"}}>
+                            <div style={{fontSize:12,fontWeight:700,color:"#6B7280",marginBottom:8}}>📄 설교 원문</div>
+                            <div style={{maxHeight:400,overflowY:"auto",fontSize:13,color:"#374151",lineHeight:1.8,whiteSpace:"pre-wrap",background:"#fff",padding:"14px",borderRadius:10,border:"1px solid #E5E7EB"}}>
+                              {lib.text}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
-            }
+            )}
+
+            {/* ── 스타일 분석 탭 ── */}
+            {libSubTab==="styles"&&(
+              <div>
+                {library.filter(function(l){return l.analysis;}).length===0
+                  ?<div style={sy.emptyBox}><div style={{fontSize:40,marginBottom:12}}>🎨</div><p style={{color:"#6B7280",fontSize:14}}>분석된 스타일이 없습니다.</p><p style={{color:"#9CA3AF",fontSize:12,marginTop:4}}>설교 등록 탭에서 파일을 업로드하세요.</p></div>
+                  :<div>
+                    <div style={{fontSize:13,fontWeight:700,color:"#CBD5E1",marginBottom:10}}>분석된 스타일 ({library.filter(function(l){return l.analysis;}).length}개)</div>
+                    {library.filter(function(l){return l.analysis;}).map(function(lib){
+                      var isActive=activeLib===lib.id;
+                      return(
+                        <div key={lib.id} style={Object.assign({},sy.libCard,isActive?sy.libCardOn:{})}>
+                          <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"16px 18px"}}>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:15,fontWeight:700,color:"#111827"}}>{lib.name}</div>
+                              <div style={{fontSize:12,color:"#9CA3AF",marginTop:2}}>{lib.date} · 파일 {lib.fileCount}개</div>
+                            </div>
+                            <div style={{display:"flex",gap:8}}>
+                              <button style={Object.assign({},sy.useBtn,isActive?sy.useBtnOn:{})}
+                                onClick={function(){if(isActive){setActiveLib(null);}else{setActiveLib(lib.id);setMainTab("bible");}}}>
+                                {isActive?"✓ 사용 중":"사용하기"}
+                              </button>
+                              <button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>🗑️</button>
+                            </div>
+                          </div>
+                          {lib.analysis&&(
+                            <div style={sy.analysisBox}>
+                              {[["설교 스타일",lib.analysis.preachingStyle],["언어 톤",lib.analysis.toneAndVoice],["구조 패턴",lib.analysis.structurePattern],["신학 강조",lib.analysis.theologicalEmphasis],["자주 쓰는 표현",lib.analysis.keyPhrases]].map(function(row,ri){
+                                return <div key={ri} style={sy.aRow}><span style={sy.aLabel}>{row[0]}</span><span style={sy.aVal}>{row[1]}</span></div>;
+                              })}
+                              <div style={Object.assign({},sy.aRow,{borderBottom:"none"})}><span style={sy.aLabel}>종합 요약</span><span style={Object.assign({},sy.aVal,{color:"#1D4ED8",fontWeight:600})}>{lib.analysis.summary}</span></div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                }
+              </div>
+            )}
           </div>
         )}
 
