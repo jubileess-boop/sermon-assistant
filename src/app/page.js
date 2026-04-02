@@ -217,12 +217,41 @@ const FORMAT_PROMPTS = {
 (소그룹·가정예배용 질문 3~4개)`,
 };
 
+// ── 저장소 감지: 로컬 서버면 파일 저장, 아니면 window.storage/localStorage ──
+async function isLocalServer() {
+  return typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+}
+
 async function storageSave(key, value) {
   var json = JSON.stringify(value);
+  // 로컬 서버(내 컴퓨터)에서 실행 중이면 파일로 저장
+  if (await isLocalServer()) {
+    try {
+      var res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: key, value: json }),
+      });
+      if (res.ok) return;
+    } catch(e) {}
+  }
+  // Claude.ai 또는 Vercel에서는 window.storage 사용
   try { if (window.storage && window.storage.set) { await window.storage.set(key, json); return; } } catch(e) {}
   try { localStorage.setItem(key, json); } catch(e) {}
 }
+
 async function storageLoad(key) {
+  // 로컬 서버(내 컴퓨터)에서 실행 중이면 파일에서 불러오기
+  if (await isLocalServer()) {
+    try {
+      var res = await fetch("/api/data?key=" + key);
+      if (res.ok) {
+        var data = await res.json();
+        if (data.value) return JSON.parse(data.value);
+      }
+    } catch(e) {}
+  }
+  // Claude.ai 또는 Vercel에서는 window.storage 사용
   try { if (window.storage && window.storage.get) { var r = await window.storage.get(key); if (r && r.value) return JSON.parse(r.value); } } catch(e) {}
   try { var v = localStorage.getItem(key); if (v) return JSON.parse(v); } catch(e) {}
   return null;
@@ -293,6 +322,7 @@ var STORAGE_LIBRARY="library-v1";
 export default function App() {
   const [mainTab,   setMainTab]   = useState("bible");
   const [storageReady,setStorageReady]=useState(false);
+  const [storageMode, setStorageMode]  = useState(""); // "file" | "cloud"
   const [saveStatus,setSaveStatus]=useState("");
 
   // 성경
@@ -328,6 +358,8 @@ export default function App() {
   const [chiasmLoading,   setChiasmLoading]   = useState(false);
   const [savedChiasms,    setSavedChiasms]    = useState([]);
   const [viewChiasm,      setViewChiasm]      = useState(null);
+  const [chiasmMemo,          setChiasmMemo]          = useState("");
+  const [chiasmDeleteConfirm, setChiasmDeleteConfirm] = useState(null);
 
   // 저장 설교
   const [savedSermons,  setSavedSermons]   = useState([]);
@@ -376,6 +408,9 @@ export default function App() {
 
   useEffect(function(){
     async function init(){
+      // 저장 모드 감지
+      var isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+      setStorageMode(isLocal ? "file" : "cloud");
       var s=await storageLoad(STORAGE_SERMONS);if(s&&Array.isArray(s))setSavedSermons(s);
       var l=await storageLoad(STORAGE_LIBRARY);if(l&&Array.isArray(l))setLibrary(l);
       var c=await storageLoad("chiasms-v1");if(c&&Array.isArray(c))setSavedChiasms(c);
@@ -393,7 +428,7 @@ export default function App() {
   // 프레임 변경 시 구조 초기화
   useEffect(function(){setChiasmStructure({});},[chiasmFrame]);
 
-  function clearVerse(){setKorLines([]);setEngText("");setKorCtx("");setThemes([]);setVError("");setSermonOut("");setLoaded(0);setTotal(0);setChiasmAnalysis("");setShowChiasm(false);}
+  function clearVerse(){setKorLines([]);setEngText("");setKorCtx("");setThemes([]);setVError("");setSermonOut("");setLoaded(0);setTotal(0);setChiasmAnalysis("");setChiasmMemo("");setShowChiasm(false);}
 
   // ── 말씀 불러오기 ──
   async function fetchVerses(){
@@ -526,6 +561,7 @@ ${korLines.join("\n")}
       structure:chiasmStructure,
       labels:chiasmLabels,
       analysis:chiasmAnalysis,
+      memo:chiasmMemo,
       date:new Date().toLocaleDateString("ko-KR"),
       time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}),
     };
@@ -533,6 +569,15 @@ ${korLines.join("\n")}
     setSavedChiasms(updated);
     await storageSave("chiasms-v1",updated);
     setSaveStatus("saved");setTimeout(function(){setSaveStatus("");},3000);
+  }
+
+  // ── 키아즘 삭제 ──
+  async function deleteChiasm(id){
+    var updated=savedChiasms.filter(function(c){return c.id!==id;});
+    setSavedChiasms(updated);
+    await storageSave("chiasms-v1",updated);
+    if(viewChiasm&&viewChiasm.id===id)setViewChiasm(null);
+    setChiasmDeleteConfirm(null);
   }
 
   // ── 설교 저장 ──
@@ -655,10 +700,10 @@ ${korLines.join("\n")}
       <div style={sy.root}><div style={sy.orb1}/><div style={sy.orb2}/>
         <div style={sy.wrap}>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:20}}>
-              <button style={sy.backBtn} onClick={function(){setViewSermon(null);}}>← 목록으로</button>
+              <button style={sy.backBtn} onClick={function(){setViewSermon(null);}}>Back</button>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:16,fontWeight:700,color:"#F0F9FF"}}>{viewSermon.title}</div><div style={{fontSize:12,color:"#94A3B8",marginTop:2}}>{viewSermon.date} {viewSermon.time} · {viewSermon.refLabel}</div></div>
-              <button style={{padding:"6px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.1)",color:"#E2E8F0",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={function(){setShowExport(!showExport);}}>📋 내보내기</button>
-              <button style={sy.delBtnSm} onClick={function(){setDeleteConfirm(viewSermon.id);}}>🗑️ 삭제</button>
+              <button style={{padding:"6px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.1)",color:"#E2E8F0",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={function(){setShowExport(!showExport);}}>Export</button>
+              <button style={sy.delBtnSm} onClick={function(){setDeleteConfirm(viewSermon.id);}}>DEL</button>
             </div>
             {showExport&&(
               <div style={sy.card}>
@@ -685,8 +730,8 @@ ${korLines.join("\n")}
             </div>
           </div>
           {deleteConfirm===viewSermon.id&&(
-            <div style={sy.confirmBox}><p style={{fontSize:13,color:"#374151",marginBottom:10}}>이 설교를 삭제하시겠습니까?</p>
-              <div style={{display:"flex",gap:8}}><button style={sy.modalCancelBtn} onClick={function(){setDeleteConfirm(null);}}>취소</button><button style={Object.assign({},sy.modalSaveBtn,{background:"linear-gradient(135deg,#DC2626,#B91C1C)"})} onClick={function(){deleteSermon(viewSermon.id);}}>삭제</button></div>
+            <div style={sy.confirmBox}><p style={{fontSize:13,color:"#374151",marginBottom:10}}>Delete this sermon?</p>
+              <div style={{display:"flex",gap:8}}><button style={sy.modalCancelBtn} onClick={function(){setDeleteConfirm(null);}}>CANCEL</button><button style={Object.assign({},sy.modalSaveBtn,{background:"linear-gradient(135deg,#DC2626,#B91C1C)"})} onClick={function(){deleteSermon(viewSermon.id);}}>DEL</button></div>
             </div>
           )}
         </div>
@@ -701,9 +746,19 @@ ${korLines.join("\n")}
       <div style={sy.root}><div style={sy.orb1}/><div style={sy.orb2}/>
         <div style={sy.wrap}>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-            <button style={sy.backBtn} onClick={function(){setViewChiasm(null);}}>← 목록으로</button>
+            <button style={sy.backBtn} onClick={function(){setViewChiasm(null);}}>Back</button>
             <div style={{flex:1,minWidth:0}}><div style={{fontSize:16,fontWeight:700,color:"#F0F9FF"}}>{viewChiasm.title}</div><div style={{fontSize:12,color:"#94A3B8",marginTop:2}}>{viewChiasm.date} {viewChiasm.time} · {viewChiasm.refLabel} · {viewChiasm.frame}단</div></div>
+            <button style={sy.delBtnSm} onClick={function(){setChiasmDeleteConfirm(viewChiasm.id);}}>DEL</button>
           </div>
+          {chiasmDeleteConfirm===viewChiasm.id&&(
+            <div style={sy.confirmBox}>
+              <p style={{fontSize:13,color:"#374151",marginBottom:10}}>Delete this chiasm?</p>
+              <div style={{display:"flex",gap:8}}>
+                <button style={sy.modalCancelBtn} onClick={function(){setChiasmDeleteConfirm(null);}}>CANCEL</button>
+                <button style={Object.assign({},sy.modalSaveBtn,{background:"linear-gradient(135deg,#DC2626,#B91C1C)"})} onClick={function(){deleteChiasm(viewChiasm.id);}}>DEL</button>
+              </div>
+            </div>
+          )}
           {/* 구조 표 */}
           <div style={sy.card}>
             <div style={sy.cardTitle}>🔁 키아즘 구조 ({viewChiasm.frame}단)</div>
@@ -723,7 +778,15 @@ ${korLines.join("\n")}
               <span style={{fontSize:22}}>🔁</span>
               <div style={{flex:1}}><div style={{fontSize:16,fontWeight:700,color:"#fff",fontFamily:"'Noto Serif KR',serif"}}>{viewChiasm.title}</div><div style={{fontSize:12,color:"rgba(255,255,255,.75)",marginTop:2}}>{viewChiasm.refLabel} · {viewChiasm.frame}단 키아즘</div></div>
             </div>
-            <div style={{...sy.resultBody,background:"#FAF5FF"}}>{renderMd(viewChiasm.analysis)}</div>
+            <div style={{...sy.resultBody,background:"#FAF5FF"}}>
+              {renderMd(viewChiasm.analysis)}
+              {viewChiasm.memo&&(
+                <div style={{marginTop:20,padding:"16px",background:"#F5F3FF",borderRadius:12,border:"2px solid #DDD6FE"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#7C3AED",marginBottom:8}}>✏️ 나의 분석 메모</div>
+                  <p style={{fontSize:13,color:"#374151",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{viewChiasm.memo}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}button{cursor:pointer;transition:all .18s;}`}</style>
@@ -742,6 +805,8 @@ ${korLines.join("\n")}
           <div style={sy.cross}>✝</div>
           <h1 style={sy.title}>설교 비서</h1>
           <p style={sy.sub}>Claude AI · 연령대별 맞춤 설교 · 키아즘 연구 · 영구 저장</p>
+          {storageMode==="file"&&<div style={{marginTop:6,display:"inline-block",padding:"3px 14px",borderRadius:20,background:"rgba(20,83,45,.8)",color:"#86EFAC",fontSize:11,fontWeight:700}}>File Mode</div>}
+          {storageMode==="cloud"&&<div style={{marginTop:6,display:"inline-block",padding:"3px 14px",borderRadius:20,background:"rgba(30,58,138,.8)",color:"#93C5FD",fontSize:11,fontWeight:700}}>Cloud Mode</div>}
           {saveStatus==="saving"&&<div style={sy.saveBar}>💾 저장 중...</div>}
           {saveStatus==="saved"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(20,83,45,.9)",color:"#86EFAC"})}>✅ 저장 완료!</div>}
           {saveStatus==="error"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(153,27,27,.9)",color:"#FCA5A5"})}>❌ 저장 오류</div>}
@@ -881,7 +946,7 @@ ${korLines.join("\n")}
                   <div style={{flex:1}}><div style={{fontSize:16,fontWeight:700,color:"#fff",fontFamily:"'Noto Serif KR',serif"}}>{lv.label} 설교 자료</div><div style={{fontSize:12,color:"rgba(255,255,255,.75)",marginTop:2}}>{refLabel} · {activeLibObj?(activeLibObj.name+" 스타일"):"Claude AI"}</div></div>
                   {!sLoading&&sermonOut&&(
                     <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                      <button style={sy.saveBtn} onClick={openSaveModal}>💾 저장</button>
+                      <button style={sy.saveBtn} onClick={openSaveModal}>Save</button>
                       <button style={{...sy.saveBtn,fontSize:12}} onClick={function(){setShowExport(!showExport);}}>
                         {showExport?"✕ 닫기":"📋 텍스트 내보내기"}
                       </button>
@@ -984,8 +1049,8 @@ ${korLines.join("\n")}
                   </div>
                   {!chiasmLoading&&chiasmAnalysis&&(
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      <button style={sy.saveBtn} onClick={saveChiasm}>💾 저장하기</button>
-                      <button style={{...sy.saveBtn,background:"rgba(255,255,255,.3)",border:"2px solid rgba(255,255,255,.8)"}} onClick={function(){genSermonFromChiasm();}}>✝️ 설교 생성</button>
+                      <button style={sy.saveBtn} onClick={saveChiasm}>Save</button>
+                      <button style={{...sy.saveBtn,background:"rgba(255,255,255,.3)",border:"2px solid rgba(255,255,255,.8)"}} onClick={function(){genSermonFromChiasm();}}>Sermon</button>
                     </div>
                   )}
                 </div>
@@ -994,6 +1059,21 @@ ${korLines.join("\n")}
                     ?<div style={sy.loadBox}><div style={sy.spinLg}/><p style={sy.loadTxt}>🔍 키아즘 구조를 분석하고 있습니다...</p><p style={sy.loadSub}>문맥·원어·신학적 의미를 종합 분석 중입니다</p></div>
                     :<div>{renderMd(chiasmAnalysis)}</div>}
                 </div>
+                {/* ── 나의 분석 메모 ── */}
+                {!chiasmLoading&&chiasmAnalysis&&(
+                  <div style={{borderTop:"2px solid #DDD6FE",background:"#F5F3FF",padding:"18px 22px"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#7C3AED",marginBottom:8}}>✏️ 나의 분석 메모</div>
+                    <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.6}}>
+                      키아즘 구조에 대한 목사님의 생각, 설교 아이디어, 추가 분석을 자유롭게 기록하세요.<br/>
+                      저장하기를 누르면 메모도 함께 저장됩니다.
+                    </p>
+                    <textarea
+                      style={{width:"100%",minHeight:120,padding:"12px",borderRadius:10,border:"2px solid #DDD6FE",fontSize:13,fontFamily:"'Noto Sans KR',sans-serif",color:"#374151",background:"#fff",resize:"vertical",lineHeight:1.8,outline:"none"}}
+                      placeholder="예: A-A' 구조에서 신실하심의 대조가 핵심이다. 중심절의 '은혜'는 헬라어 카리스로..."
+                      value={chiasmMemo}
+                      onChange={function(e){setChiasmMemo(e.target.value);}}/>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1049,8 +1129,8 @@ ${korLines.join("\n")}
                           setSermonOut(chiasmSermonOut);
                           setLevel(chiasmSermonLevel);
                           setShowSaveModal(true);setSaveMsg("");
-                        }}>💾 저장</button>
-                      <button style={{...sy.saveBtn,fontSize:12}} onClick={function(){setShowChiasmExport(!showChiasmExport);}}>📋 내보내기</button>
+                        }}>Save</button>
+                      <button style={{...sy.saveBtn,fontSize:12}} onClick={function(){setShowChiasmExport(!showChiasmExport);}}>Export</button>
                       </div>
                     )}
                   </div>
@@ -1096,17 +1176,27 @@ ${korLines.join("\n")}
                   return(
                     <div key={c.id} style={sy.sermonCard}>
                       <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"16px 18px"}}>
-                        <div style={{width:40,height:40,borderRadius:12,background:"linear-gradient(135deg,#7C3AED,#6D28D9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🔁</div>
+                        <div style={{width:40,height:40,borderRadius:12,background:"linear-gradient(135deg,#7C3AED,#6D28D9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{"🔁"}</div>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:15,fontWeight:700,color:"#111827",marginBottom:3}}>{c.title}</div>
                           <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:4}}>
-                            <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#F5F3FF",color:"#7C3AED",border:"1px solid #DDD6FE"}}>{c.frame}단 키아즘</span>
+                            <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"#F5F3FF",color:"#7C3AED",border:"1px solid #DDD6FE"}}>{c.frame}{"단 키아즘"}</span>
                             <span style={sy.tagChip2}>{c.refLabel}</span>
                           </div>
-                          <div style={{fontSize:11,color:"#9CA3AF"}}>📅 {c.date} {c.time}</div>
+                          <div style={{fontSize:11,color:"#9CA3AF"}}>{c.date} {c.time}</div>
                         </div>
-                        <button style={sy.viewBtn} onClick={function(){setViewChiasm(c);}}>📖 열람</button>
+                        <button style={sy.viewBtn} onClick={function(){setViewChiasm(c);}}>{"View"}</button>
+                        <button style={sy.delBtnSm} onClick={function(){setChiasmDeleteConfirm(c.id);}}>{"DEL"}</button>
                       </div>
+                      {chiasmDeleteConfirm===c.id&&(
+                        <div style={sy.confirmBox}>
+                          <p style={{fontSize:13,color:"#374151",marginBottom:10}}>{"Delete this chiasm?"}</p>
+                          <div style={{display:"flex",gap:8}}>
+                            <button style={sy.modalCancelBtn} onClick={function(){setChiasmDeleteConfirm(null);}}>{"Cancel"}</button>
+                            <button style={Object.assign({},sy.modalSaveBtn,{background:"linear-gradient(135deg,#DC2626,#B91C1C)"})} onClick={function(){deleteChiasm(c.id);}}>{"Delete"}</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1184,7 +1274,7 @@ ${korLines.join("\n")}
             {savedSermons.length===0
               ?<div style={sy.emptyBox}><div style={{fontSize:40,marginBottom:12}}>💾</div><p style={{color:"#6B7280",fontSize:14}}>아직 저장된 설교가 없습니다.</p><button style={Object.assign({},sy.smallBtn2,{marginTop:14})} onClick={function(){setMainTab("bible");}}>설교 생성하러 가기 →</button></div>
               :filteredSermons.length===0?<div style={sy.emptyBox}><p style={{color:"#9CA3AF",fontSize:13}}>검색 결과가 없습니다.</p></div>
-              :<div>{filteredSermons.map(function(s){var sLv=LEVELS[s.level];return(<div key={s.id} style={sy.sermonCard}><div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"16px 18px"}}><div style={Object.assign({},sy.levelDot,{background:sLv.gradient})}>{sLv.emoji}</div><div style={{flex:1,minWidth:0}}><div style={{fontSize:15,fontWeight:700,color:"#111827",marginBottom:3}}>{s.title}</div><div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:4}}><span style={Object.assign({},sy.tagChip,{background:sLv.bg,color:sLv.color,border:"1px solid "+sLv.border})}>{sLv.label}</span><span style={sy.tagChip2}>{s.refLabel}</span>{s.styleName&&<span style={sy.tagChip3}>🎨 {s.styleName}</span>}</div><div style={{fontSize:11,color:"#9CA3AF"}}>📅 {s.date} {s.time}</div><p style={{fontSize:12,color:"#6B7280",marginTop:6,lineHeight:1.5,overflow:"hidden",maxHeight:34}}>{s.content.replace(/[#*]/g,"").slice(0,90)}...</p></div><div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}><button style={sy.viewBtn} onClick={function(){setViewSermon(s);}}>📖 열람</button><button style={sy.delBtnSm} onClick={function(){setDeleteConfirm(s.id);}}>🗑️ 삭제</button></div></div>{deleteConfirm===s.id&&(<div style={sy.confirmBox}><p style={{fontSize:13,color:"#374151",marginBottom:10}}>이 설교를 삭제하시겠습니까?</p><div style={{display:"flex",gap:8}}><button style={sy.modalCancelBtn} onClick={function(){setDeleteConfirm(null);}}>취소</button><button style={Object.assign({},sy.modalSaveBtn,{background:"linear-gradient(135deg,#DC2626,#B91C1C)"})} onClick={function(){deleteSermon(s.id);}}>삭제</button></div></div>)}</div>);})}</div>
+              :<div>{filteredSermons.map(function(s){var sLv=LEVELS[s.level];return(<div key={s.id} style={sy.sermonCard}><div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"16px 18px"}}><div style={Object.assign({},sy.levelDot,{background:sLv.gradient})}>{sLv.emoji}</div><div style={{flex:1,minWidth:0}}><div style={{fontSize:15,fontWeight:700,color:"#111827",marginBottom:3}}>{s.title}</div><div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:4}}><span style={Object.assign({},sy.tagChip,{background:sLv.bg,color:sLv.color,border:"1px solid "+sLv.border})}>{sLv.label}</span><span style={sy.tagChip2}>{s.refLabel}</span>{s.styleName&&<span style={sy.tagChip3}>🎨 {s.styleName}</span>}</div><div style={{fontSize:11,color:"#9CA3AF"}}>📅 {s.date} {s.time}</div><p style={{fontSize:12,color:"#6B7280",marginTop:6,lineHeight:1.5,overflow:"hidden",maxHeight:34}}>{s.content.replace(/[#*]/g,"").slice(0,90)}...</p></div><div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0}}><button style={sy.viewBtn} onClick={function(){setViewSermon(s);}}>View</button><button style={sy.delBtnSm} onClick={function(){setDeleteConfirm(s.id);}}>DEL</button></div></div>{deleteConfirm===s.id&&(<div style={sy.confirmBox}><p style={{fontSize:13,color:"#374151",marginBottom:10}}>Delete this sermon?</p><div style={{display:"flex",gap:8}}><button style={sy.modalCancelBtn} onClick={function(){setDeleteConfirm(null);}}>CANCEL</button><button style={Object.assign({},sy.modalSaveBtn,{background:"linear-gradient(135deg,#DC2626,#B91C1C)"})} onClick={function(){deleteSermon(s.id);}}>DEL</button></div></div>)}</div>);})}</div>
             }
           </div>
         )}
@@ -1368,7 +1458,7 @@ ${korLines.join("\n")}
                               onClick={function(){if(activeLib===lib.id){setActiveLib(null);}else{setActiveLib(lib.id);setMainTab("bible");}}}>
                               {activeLib===lib.id?"✓ 사용 중":"스타일 적용"}
                             </button>
-                            <button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>🗑️</button>
+                            <button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>DEL</button>
                           </div>
                         </div>
                         {/* 원문 열람 */}
@@ -1408,7 +1498,7 @@ ${korLines.join("\n")}
                                 onClick={function(){if(isActive){setActiveLib(null);}else{setActiveLib(lib.id);setMainTab("bible");}}}>
                                 {isActive?"✓ 사용 중":"사용하기"}
                               </button>
-                              <button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>🗑️</button>
+                              <button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>DEL</button>
                             </div>
                           </div>
                           {lib.analysis&&(
@@ -1433,7 +1523,7 @@ ${korLines.join("\n")}
       </div>
 
       {/* 저장 모달 */}
-      {showSaveModal&&(<div style={sy.modalOverlay}><div style={sy.modal}><div style={sy.modalTitle}>💾 설교 저장하기</div><p style={{fontSize:13,color:"#6B7280",marginBottom:16}}>{refLabel} · {LEVELS[level].label}</p><div style={sy.selLabel}>설교 제목</div><input style={Object.assign({},sy.nameInput,{marginBottom:8})} value={saveTitle} onChange={function(e){setSaveTitle(e.target.value);}} placeholder="저장할 설교 제목을 입력하세요"/>{saveMsg&&<p style={{color:"#DC2626",fontSize:12,marginBottom:8}}>⚠️ {saveMsg}</p>}<div style={{display:"flex",gap:10,marginTop:8}}><button style={sy.modalCancelBtn} onClick={function(){setShowSaveModal(false);}}>취소</button><button style={sy.modalSaveBtn} onClick={saveSermon}>💾 저장</button></div></div></div>)}
+      {showSaveModal&&(<div style={sy.modalOverlay}><div style={sy.modal}><div style={sy.modalTitle}>💾 설교 저장하기</div><p style={{fontSize:13,color:"#6B7280",marginBottom:16}}>{refLabel} · {LEVELS[level].label}</p><div style={sy.selLabel}>설교 제목</div><input style={Object.assign({},sy.nameInput,{marginBottom:8})} value={saveTitle} onChange={function(e){setSaveTitle(e.target.value);}} placeholder="저장할 설교 제목을 입력하세요"/>{saveMsg&&<p style={{color:"#DC2626",fontSize:12,marginBottom:8}}>⚠️ {saveMsg}</p>}<div style={{display:"flex",gap:10,marginTop:8}}><button style={sy.modalCancelBtn} onClick={function(){setShowSaveModal(false);}}>CANCEL</button><button style={sy.modalSaveBtn} onClick={saveSermon}>Save</button></div></div></div>)}
 
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}@keyframes spin{to{transform:rotate(360deg);}}select,input{appearance:auto;outline:none;}button{transition:all .18s ease;cursor:pointer;}button:hover:not(:disabled){filter:brightness(1.06);}`}</style>
     </div>
