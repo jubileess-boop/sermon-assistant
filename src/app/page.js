@@ -71,6 +71,84 @@ const VERSE_COUNTS = {
   "요한계시록":[20,29,22,11,14,17,17,13,21,11,19,17,18,20,8,21,18,24,21,15,27,21],
 };
 
+// ── 성경책 약어 매핑 (bible_kor.json 키 형식) ──
+var BOOK_ABBR = {
+  "창세기":"창","출애굽기":"출","레위기":"레","민수기":"민","신명기":"신",
+  "여호수아":"수","사사기":"삿","룻기":"룻","사무엘상":"삼상","사무엘하":"삼하",
+  "열왕기상":"왕상","열왕기하":"왕하","역대상":"대상","역대하":"대하",
+  "에스라":"스","느헤미야":"느","에스더":"에","욥기":"욥","시편":"시",
+  "잠언":"잠","전도서":"전","아가":"아","이사야":"사","예레미야":"렘",
+  "예레미야애가":"애","에스겔":"겔","다니엘":"단","호세아":"호","요엘":"욜",
+  "아모스":"암","오바댜":"옵","요나":"욘","미가":"미","나훔":"나",
+  "하박국":"합","스바냐":"습","학개":"학","스가랴":"슥","말라기":"말",
+  "마태복음":"마","마가복음":"막","누가복음":"눅","요한복음":"요",
+  "사도행전":"행","로마서":"롬","고린도전서":"고전","고린도후서":"고후",
+  "갈라디아서":"갈","에베소서":"엡","빌립보서":"빌","골로새서":"골",
+  "데살로니가전서":"살전","데살로니가후서":"살후","디모데전서":"딤전",
+  "디모데후서":"딤후","디도서":"딛","빌레몬서":"몬","히브리서":"히",
+  "야고보서":"약","베드로전서":"벧전","베드로후서":"벧후","요한일서":"요일",
+  "요한이서":"요이","요한삼서":"요삼","유다서":"유","요한계시록":"계",
+};
+
+// 약어 → KJV book 번호
+var KJV_BOOK_NUM = {
+  "창":1,"출":2,"레":3,"민":4,"신":5,"수":6,"삿":7,"룻":8,"삼상":9,"삼하":10,
+  "왕상":11,"왕하":12,"대상":13,"대하":14,"스":15,"느":16,"에":17,"욥":18,"시":19,
+  "잠":20,"전":21,"아":22,"사":23,"렘":24,"애":25,"겔":26,"단":27,"호":28,"욜":29,
+  "암":30,"옵":31,"욘":32,"미":33,"나":34,"합":35,"습":36,"학":37,"슥":38,"말":39,
+  "마":40,"막":41,"눅":42,"요":43,"행":44,"롬":45,"고전":46,"고후":47,"갈":48,
+  "엡":49,"빌":50,"골":51,"살전":52,"살후":53,"딤전":54,"딤후":55,"딛":56,"몬":57,
+  "히":58,"약":59,"벧전":60,"벧후":61,"요일":62,"요이":63,"요삼":64,"유":65,"계":66,
+};
+
+// ── 성경 JSON 캐시 ──
+var _bibleKorCache = null;
+var _bibleKjvCache = null;
+
+async function loadBibleKor() {
+  if (_bibleKorCache) return _bibleKorCache;
+  try {
+    var res = await fetch('/bible_kor.json');
+    if (res.ok) { _bibleKorCache = await res.json(); return _bibleKorCache; }
+  } catch(e) {}
+  return null;
+}
+
+async function loadBibleKjv() {
+  if (_bibleKjvCache) return _bibleKjvCache;
+  try {
+    var res = await fetch('/bible_kjv.json');
+    if (res.ok) {
+      var data = await res.json();
+      // 빠른 조회를 위해 인덱싱
+      var idx = {};
+      (data.verses||[]).forEach(function(v){
+        idx[v.book+":"+v.chapter+":"+v.verse] = v.text.replace(/[¶‹›\[\]]/g,'').trim();
+      });
+      _bibleKjvCache = idx;
+      return _bibleKjvCache;
+    }
+  } catch(e) {}
+  return null;
+}
+
+function getKorVerse(bibleData, bookName, chap, verse) {
+  if (!bibleData) return null;
+  var abbr = BOOK_ABBR[bookName];
+  if (!abbr) return null;
+  var key = abbr + chap + ":" + verse;
+  return bibleData[key] || null;
+}
+
+function getKjvVerse(kjvIndex, bookName, chap, verse) {
+  if (!kjvIndex) return null;
+  var abbr = BOOK_ABBR[bookName];
+  if (!abbr) return null;
+  var bookNum = KJV_BOOK_NUM[abbr];
+  if (!bookNum) return null;
+  return kjvIndex[bookNum+":"+chap+":"+verse] || null;
+}
+
 const BIBLE_BOOKS = {
   구약: [
     {name:"창세기",en:"genesis",chapters:50},{name:"출애굽기",en:"exodus",chapters:40},
@@ -432,37 +510,67 @@ export default function App() {
 
   // ── 말씀 불러오기 ──
   async function fetchVerses(){
-    setVLoading(true);setVError("");setKorLines([]);setSermonOut("");setChiasmAnalysis("");
+    setVLoading(true);setVError("");setKorLines([]);setEngText("");setSermonOut("");setChiasmAnalysis("");setChiasmMemo("");
     var list=buildVerseList(book,parseInt(fromChap),parseInt(fromVerse),parseInt(toChap),parseInt(toVerse));
     setTotal(list.length);setLoaded(0);
     var results=[];
-    try{
+
+    // JSON 성경 파일 우선 로드
+    var bibleKor=await loadBibleKor();
+    var bibleKjv=await loadBibleKjv();
+
+    if(bibleKor){
+      // JSON 파일에서 즉시 로드 (API 불필요!)
       for(var i=0;i<list.length;i++){
         var item=list[i];
-        var text=await callClaude(
-          "너는 한국어 개역개정 성경 본문을 정확히 제공하는 도우미야. 요청한 절의 개역개정 본문만 한 줄로 출력해. 형식: \""+item.verse+" 본문내용\" 다른 설명 없이 본문만 출력해.",
-          book+" "+item.chap+"장 "+item.verse+"절 개역개정 본문", 300
-        );
-        var t=text.trim();
-        results.push(t.indexOf(String(item.verse))===0?t:(item.verse+" "+t));
-        setKorLines(results.slice());setLoaded(results.length);
+        var verseText=getKorVerse(bibleKor,book,item.chap,item.verse);
+        results.push(item.verse+" "+(verseText?verseText.trim():"(본문 없음)"));
+        setKorLines(results.slice());
+        setLoaded(results.length);
       }
-    }catch(e){setVError("말씀 오류: "+e.message);setVLoading(false);return;}
+      // KJV도 JSON에서 로드
+      if(bibleKjv){
+        var kjvLines=[];
+        for(var j=0;j<list.length;j++){
+          var jitem=list[j];
+          var kjvText=getKjvVerse(bibleKjv,book,jitem.chap,jitem.verse);
+          if(kjvText) kjvLines.push(jitem.verse+" "+kjvText);
+        }
+        if(kjvLines.length>0) setEngText(kjvLines.join("\n"));
+      }
+    } else {
+      // JSON 없으면 API 방식
+      try{
+        for(var i=0;i<list.length;i++){
+          var item=list[i];
+          var text=await callClaude(
+            "너는 한국어 개역개정 성경 본문을 정확히 제공하는 도우미야. 요청한 절의 개역개정 본문만 한 줄로 출력해. 형식: \""+item.verse+" 본문내용\" 다른 설명 없이 본문만 출력해.",
+            book+" "+item.chap+"장 "+item.verse+"절 개역개정 본문", 300
+          );
+          var t=text.trim();
+          results.push(t.indexOf(String(item.verse))===0?t:(item.verse+" "+t));
+          setKorLines(results.slice());setLoaded(results.length);
+        }
+      }catch(e){setVError("말씀 오류: "+e.message);setVLoading(false);return;}
+      try{
+        if(parseInt(fromChap)===parseInt(toChap)){
+          var enBook=(bookInfo?bookInfo.en:"").replace(/ /g,"+");
+          var passage=parseInt(fromVerse)===parseInt(toVerse)?(enBook+"+"+fromChap+":"+fromVerse):(enBook+"+"+fromChap+":"+fromVerse+"-"+toVerse);
+          var res=await fetch("https://bible-api.com/"+passage+"?translation=kjv");
+          if(res.ok){var d=await res.json();setEngText((d.text||"").trim());}
+        }
+      }catch(e3){}
+    }
+
+    // 배경/주제는 AI로 생성
     try{
       var ctxRaw=await callClaude("너는 성경 구절 배경을 설명하는 도우미야. 반드시 순수 JSON만 출력해. {\"context\":\"배경 1~2줄\",\"theme\":\"키워드1,키워드2,키워드3\"}",refLabel+" 배경과 주제",250);
       var parsed=JSON.parse(ctxRaw.replace(/```json|```/g,"").trim());
       setKorCtx(parsed.context||"");setThemes((parsed.theme||"").split(/[,，·]+/).map(function(t){return t.trim();}).filter(Boolean));
     }catch(e2){}
-    try{
-      if(parseInt(fromChap)===parseInt(toChap)){
-        var enBook=(bookInfo?bookInfo.en:"").replace(/ /g,"+");
-        var passage=parseInt(fromVerse)===parseInt(toVerse)?(enBook+"+"+fromChap+":"+fromVerse):(enBook+"+"+fromChap+":"+fromVerse+"-"+toVerse);
-        var res=await fetch("https://bible-api.com/"+passage+"?translation=kjv");
-        if(res.ok){var d=await res.json();setEngText((d.text||"").trim());}
-      }
-    }catch(e3){}
     setVLoading(false);
   }
+
 
   // ── 설교 생성 ──
   async function genSermon(){
