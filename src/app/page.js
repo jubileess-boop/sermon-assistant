@@ -310,15 +310,16 @@ async function pickSaveFolder() {
 async function saveToFolder(jsonStr) {
   if (!_dirHandle) return false;
   try {
-    var fh = await _dirHandle.getFileHandle(BACKUP_FILENAME, { create:true });
-    var w  = await fh.createWritable();
-    await w.write(jsonStr); await w.close();
+    var fh   = await _dirHandle.getFileHandle(BACKUP_FILENAME, { create:true });
+    var w    = await fh.createWritable();
+    var blob = new Blob([new TextEncoder().encode(jsonStr)], { type:"application/json;charset=utf-8" });
+    await w.write(blob); await w.close();
     return true;
   } catch(e) { _dirHandle = null; return false; }
 }
 
 function downloadAsFile(filename, content) {
-  var blob = new Blob([content], { type:"application/json;charset=utf-8" });
+  var blob = new Blob([new TextEncoder().encode(content)], { type:"application/json;charset=utf-8" });
   var url  = URL.createObjectURL(blob);
   var a    = document.createElement("a");
   a.href = url; a.download = filename;
@@ -693,26 +694,38 @@ ${korLines.join("\n")}
   }
 
   // ── 키아즘 저장 ──
-  async function saveChiasm(){
-    if(!chiasmAnalysis)return;
-    var entry={
-      id:Date.now(),
-      title:chiasmTitle||(refLabel+" 키아즘 연구"),
-      refLabel:refLabel,
-      frame:chiasmFrame,
-      center:chiasmCenter,
-      structure:chiasmStructure,
-      labels:chiasmLabels,
-      analysis:chiasmAnalysis,
-      memo:chiasmMemo,
-      date:new Date().toLocaleDateString("ko-KR"),
-      time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}),
-    };
-    var updated=[entry].concat(savedChiasms);
-    setSavedChiasms(updated);
-    await storageSave("chiasms-v1",updated);
-    await autoBackup(savedSermons, updated, library);
-    setSaveStatus("saved");setTimeout(function(){setSaveStatus("");},3000);
+  // ── 키아즘 저장 모달 상태 ──
+  const [showChiasmSaveModal,  setShowChiasmSaveModal]  = useState(false);
+  const [chiasmSaveType,       setChiasmSaveType]       = useState("chiasm");
+  const [chiasmSaveTitle,      setChiasmSaveTitle]      = useState("");
+  const [chiasmSaveMsg,        setChiasmSaveMsg]        = useState("");
+
+  function openChiasmSaveModal(type) {
+    setChiasmSaveType(type);
+    if (type === "chiasm") {
+      setChiasmSaveTitle(chiasmTitle || (refLabel + " 키아즘 연구"));
+    } else {
+      setChiasmSaveTitle((chiasmTitle||refLabel) + " " + LEVELS[chiasmSermonLevel].label + " 설교 (키아즘)");
+    }
+    setChiasmSaveMsg(""); setShowChiasmSaveModal(true);
+  }
+
+  async function saveChiasmAll() {
+    if (!chiasmSaveTitle.trim()) { setChiasmSaveMsg("제목을 입력해주세요."); return; }
+    setChiasmSaveMsg(""); setSaveStatus("saving");
+    if (chiasmSaveType === "chiasm") {
+      var entry={id:Date.now(),title:chiasmSaveTitle.trim(),refLabel:refLabel,frame:chiasmFrame,center:chiasmCenter,structure:chiasmStructure,labels:chiasmLabels,analysis:chiasmAnalysis,memo:chiasmMemo,date:new Date().toLocaleDateString("ko-KR"),time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})};
+      var updatedC=[entry].concat(savedChiasms); setSavedChiasms(updatedC);
+      await storageSave("chiasms-v1",updatedC); await autoBackup(savedSermons,updatedC,library);
+    } else {
+      var lv=chiasmSermonLevel;
+      var entry={id:Date.now(),title:chiasmSaveTitle.trim(),refLabel:refLabel,level:lv,levelLabel:LEVELS[lv].label,levelEmoji:LEVELS[lv].emoji,content:chiasmSermonOut,korLines:korLines,themes:themes,styleName:activeLibObj?activeLibObj.name:null,date:new Date().toLocaleDateString("ko-KR"),time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})};
+      var updatedS=[entry].concat(savedSermons); setSavedSermons(updatedS);
+      await storageSave(STORAGE_SERMONS,updatedS); await autoBackup(updatedS,savedChiasms,library);
+    }
+    setSaveStatus("saved"); setTimeout(function(){setSaveStatus("");},3000);
+    setShowChiasmSaveModal(false); setChiasmSaveTitle(""); setChiasmSaveMsg("");
+    resetAll(); setMainTab("bible");
   }
 
   // ── 키아즘 삭제 ──
@@ -840,7 +853,7 @@ ${korLines.join("\n")}
       + content.replace(/##+ /g,"[ ").replace(/\n##/g,"\n\n[").replace(/\*\*/g,"");
   }
 
-  // ── 전체 초기화 (설교 저장 완료 후) ──
+  // ── 전체 초기화 (키아즘 저장 후) ──
   function resetAll() {
     setBook(""); setFromChap(""); setFromVerse(""); setToChap(""); setToVerse("");
     setKorLines([]); setEngText(""); setKorCtx(""); setThemes([]);
@@ -848,10 +861,10 @@ ${korLines.join("\n")}
     setChiasmTitle(""); setChiasmFrame("7"); setChiasmCenter("");
     setChiasmStructure({}); setChiasmAnalysis(""); setChiasmMemo("");
     setChiasmSermonOut(""); setChiasmSermonLevel("adult");
-    setShowExport(false); setShowChiasmExport(false);
-    setShowChiasm(false);
+    setShowExport(false); setShowChiasmExport(false); setShowChiasm(false);
   }
 
+  // ── 일반 설교 저장 (초기화 없이 저장된 설교 탭으로) ──
   function openSaveModal(){if(!sermonOut)return;setSaveTitle(refLabel+" "+LEVELS[level].label+" 설교");setShowSaveModal(true);setSaveMsg("");}
   async function saveSermon(){
     if(!saveTitle.trim()){setSaveMsg("제목을 입력해주세요.");return;}
@@ -865,8 +878,7 @@ ${korLines.join("\n")}
       setTimeout(function(){setSaveStatus("");},3000);
     }catch(e){setSaveStatus("error");}
     setShowSaveModal(false);setSaveTitle("");setSaveMsg("");
-    resetAll();
-    setMainTab("bible");
+    setMainTab("saved");
   }
   async function deleteSermon(id){
     var updated=savedSermons.filter(function(s){return s.id!==id;});setSavedSermons(updated);await storageSave(STORAGE_SERMONS,updated);
@@ -1275,7 +1287,7 @@ ${korLines.join("\n")}
                   </div>
                   {!chiasmLoading&&chiasmAnalysis&&(
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      <button style={sy.saveBtn} onClick={saveChiasm}>Save</button>
+                      <button style={sy.saveBtn} onClick={function(){openChiasmSaveModal("chiasm");}}>💾 저장</button>
                       <button style={{...sy.saveBtn,background:"rgba(255,255,255,.3)",border:"2px solid rgba(255,255,255,.8)"}} onClick={function(){genSermonFromChiasm();}}>Sermon</button>
                     </div>
                   )}
@@ -1350,13 +1362,8 @@ ${korLines.join("\n")}
                     </div>
                     {!chiasmSermonLoading&&chiasmSermonOut&&(
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                        <button style={sy.saveBtn} onClick={function(){
-                          setSaveTitle((chiasmTitle||refLabel)+" "+clv.label+" 설교 (키아즘)");
-                          setSermonOut(chiasmSermonOut);
-                          setLevel(chiasmSermonLevel);
-                          setShowSaveModal(true);setSaveMsg("");
-                        }}>Save</button>
-                      <button style={{...sy.saveBtn,fontSize:12}} onClick={function(){setShowChiasmExport(!showChiasmExport);}}>Export</button>
+                        <button style={sy.saveBtn} onClick={function(){openChiasmSaveModal("chiasmSermon");}}>💾 저장</button>
+                        <button style={{...sy.saveBtn,fontSize:12}} onClick={function(){setShowChiasmExport(!showChiasmExport);}}>Export</button>
                       </div>
                     )}
                   </div>
@@ -1744,6 +1751,31 @@ ${korLines.join("\n")}
 
       {/* 저장 모달 */}
       {showSaveModal&&(<div style={sy.modalOverlay}><div style={sy.modal}><div style={sy.modalTitle}>💾 설교 저장하기</div><p style={{fontSize:13,color:"#6B7280",marginBottom:16}}>{refLabel} · {LEVELS[level].label}</p><div style={sy.selLabel}>설교 제목</div><input style={Object.assign({},sy.nameInput,{marginBottom:8})} value={saveTitle} onChange={function(e){setSaveTitle(e.target.value);}} placeholder="저장할 설교 제목을 입력하세요"/>{saveMsg&&<p style={{color:"#DC2626",fontSize:12,marginBottom:8}}>⚠️ {saveMsg}</p>}<div style={{display:"flex",gap:10,marginTop:8}}><button style={sy.modalCancelBtn} onClick={function(){setShowSaveModal(false);}}>CANCEL</button><button style={sy.modalSaveBtn} onClick={saveSermon}>Save</button></div></div></div>)}
+
+      {/* 키아즘 저장 모달 (저장 후 초기화) */}
+      {showChiasmSaveModal&&(
+        <div style={sy.modalOverlay}>
+          <div style={sy.modal}>
+            <div style={sy.modalTitle}>{chiasmSaveType==="chiasm"?"🔁 키아즘 연구 저장":"🔁 키아즘 설교 저장"}</div>
+            <p style={{fontSize:13,color:"#6B7280",marginBottom:12}}>
+              {chiasmSaveType==="chiasm" ? refLabel+" · "+chiasmFrame+"단 키아즘" : refLabel+" · "+LEVELS[chiasmSermonLevel].label}
+            </p>
+            <p style={{fontSize:12,color:"#7C3AED",background:"#F5F3FF",padding:"8px 12px",borderRadius:8,marginBottom:14,lineHeight:1.6}}>
+              💡 저장 후 화면이 초기화되어 처음으로 돌아갑니다.
+            </p>
+            <div style={sy.selLabel}>제목</div>
+            <input style={Object.assign({},sy.nameInput,{marginBottom:8,border:"1.5px solid #DDD6FE"})}
+              value={chiasmSaveTitle}
+              onChange={function(e){setChiasmSaveTitle(e.target.value);}}
+              placeholder="저장할 제목을 입력하세요"/>
+            {chiasmSaveMsg&&<p style={{color:"#DC2626",fontSize:12,marginBottom:8}}>⚠️ {chiasmSaveMsg}</p>}
+            <div style={{display:"flex",gap:10,marginTop:8}}>
+              <button style={sy.modalCancelBtn} onClick={function(){setShowChiasmSaveModal(false);}}>CANCEL</button>
+              <button style={Object.assign({},sy.modalSaveBtn,{background:"linear-gradient(135deg,#7C3AED,#6D28D9)"})} onClick={saveChiasmAll}>💾 저장 후 처음으로</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}@keyframes spin{to{transform:rotate(360deg);}}select,input{appearance:auto;outline:none;}button{transition:all .18s ease;cursor:pointer;}button:hover:not(:disabled){filter:brightness(1.06);}`}</style>
     </div>
