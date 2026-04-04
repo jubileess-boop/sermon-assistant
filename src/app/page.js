@@ -296,6 +296,39 @@ const FORMAT_PROMPTS = {
 };
 
 // ── 저장소 감지: 로컬 서버면 파일 저장, 아니면 window.storage/localStorage ──
+// ── File System Access API (Chrome/Edge 폴더 자동저장) ──
+var _dirHandle = null;
+var BACKUP_FILENAME = "설교비서_백업.json";
+var FS_API_SUPPORTED = typeof window !== "undefined" && "showDirectoryPicker" in window;
+
+async function pickSaveFolder() {
+  try {
+    var handle = await window.showDirectoryPicker({ mode:"readwrite", startIn:"documents" });
+    _dirHandle = handle;
+    try { localStorage.setItem("sermon-fs-folderName", handle.name); } catch(e) {}
+    return handle;
+  } catch(e) { return null; }
+}
+
+async function saveToFolder(jsonStr) {
+  if (!_dirHandle) return false;
+  try {
+    var fh = await _dirHandle.getFileHandle(BACKUP_FILENAME, { create:true });
+    var w  = await fh.createWritable();
+    await w.write(jsonStr); await w.close();
+    return true;
+  } catch(e) { _dirHandle = null; return false; }
+}
+
+function downloadAsFile(filename, content) {
+  var blob = new Blob([content], { type:"application/json;charset=utf-8" });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
 async function isLocalServer() {
   return typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 }
@@ -401,6 +434,9 @@ export default function App() {
   const [mainTab,   setMainTab]   = useState("bible");
   const [storageReady,setStorageReady]=useState(false);
   const [storageMode, setStorageMode]  = useState(""); // "file" | "cloud"
+  const [folderName,    setFolderName]    = useState("");
+  const [folderStatus,  setFolderStatus]  = useState("");
+  const [showFolderBanner, setShowFolderBanner] = useState(false);
   const [saveStatus,setSaveStatus]=useState("");
 
   // 성경
@@ -486,12 +522,15 @@ export default function App() {
 
   useEffect(function(){
     async function init(){
-      // 저장 모드 감지
       var isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
       setStorageMode(isLocal ? "file" : "cloud");
       var s=await storageLoad(STORAGE_SERMONS);if(s&&Array.isArray(s))setSavedSermons(s);
       var l=await storageLoad(STORAGE_LIBRARY);if(l&&Array.isArray(l))setLibrary(l);
       var c=await storageLoad("chiasms-v1");if(c&&Array.isArray(c))setSavedChiasms(c);
+      // 폴더 이름 복원 및 배너 표시
+      var fn = typeof window !== "undefined" ? localStorage.getItem("sermon-fs-folderName") : null;
+      if (fn) { setFolderName(fn); setShowFolderBanner(true); }
+      else if (FS_API_SUPPORTED) { setShowFolderBanner(true); }
       setStorageReady(true);
     }
     init();
@@ -676,6 +715,7 @@ ${korLines.join("\n")}
     var updated=[entry].concat(savedChiasms);
     setSavedChiasms(updated);
     await storageSave("chiasms-v1",updated);
+    await autoBackup(savedSermons, updated, library);
     setSaveStatus("saved");setTimeout(function(){setSaveStatus("");},3000);
   }
 
@@ -701,15 +741,82 @@ ${korLines.join("\n")}
   const [importMsg,    setImportMsg]    = useState("");
   const [importStatus, setImportStatus] = useState(""); // "ok" | "error"
 
+  // ── 폴더 선택 ──
+  async function handlePickFolder() {
+    if (!FS_API_SUPPORTED) { setFolderStatus("noapi"); return; }
+    var handle = await pickSaveFolder();
+    if (handle) {
+      setFolderName(handle.name);
+      setFolderStatus("saved");
+      setShowFolderBanner(false);
+      var json = JSON.stringify({version:"2.0",exportDate:new Date().toLocaleDateString("ko-KR"),sermons:savedSermons,chiasms:savedChiasms,library:library},null,2);
+      await saveToFolder(json);
+      setTimeout(function(){setFolderStatus("");},3000);
+    }
+  }
+
+  // ── 통합 자동 백업 (폴더 우선, 없으면 다운로드) ──
+  async function autoBackup(sermons, chiasms, lib) {
+    var json = JSON.stringify({version:"2.0",exportDate:new Date().toLocaleDateString("ko-KR"),sermons:sermons,chiasms:chiasms,library:lib},null,2);
+    if (_dirHandle) {
+      var ok = await saveToFolder(json);
+      if (ok) { setFolderStatus("saved"); setTimeout(function(){setFolderStatus("");},2500); return; }
+    }
+    downloadAsFile("설교비서_자동백업.json", json);
+  }
+
   function makeBackupJson() {
     var data = {
-      version: "1.0",
+      version: "2.0",
       exportDate: new Date().toLocaleDateString("ko-KR"),
       sermons: savedSermons,
       chiasms: savedChiasms,
       library: library,
     };
     return JSON.stringify(data, null, 2);
+  }
+
+  // ── 수동 백업 ──
+  async function downloadBackup() {
+    var json = makeBackupJson();
+    if (_dirHandle) {
+      var ok = await saveToFolder(json);
+      if (ok) { setImportMsg("✅ ["+folderName+"] 폴더에 저장되었습니다!"); setImportStatus("ok"); return; }
+    }
+    var date = new Date().toLocaleDateString("ko-KR").replace(/\./g,"-").replace(/ /g,"");
+    downloadAsFile("설교비서_백업_"+date+".json", json);
+    setImportMsg("✅ 파일이 다운로드되었습니다!"); setImportStatus("ok");
+  }
+
+  // ── 파일에서 복원 ──
+  var importFileRef = useRef();
+  function handleImportFile(e) {
+    var file = e.target.files && e.target.files[0]; if (!file) return;
+    var reader = new FileReader();
+    reader.onload = async function(ev) {
+      setImportMsg(""); setImportStatus("");
+      try {
+        var data = JSON.parse(ev.target.result);
+        if (data.sermons && Array.isArray(data.sermons)) {
+          var merged = data.sermons.concat(savedSermons.filter(function(s){ return !data.sermons.find(function(d){return d.id===s.id;}); }));
+          setSavedSermons(merged); await storageSave(STORAGE_SERMONS, merged);
+        }
+        if (data.chiasms && Array.isArray(data.chiasms)) {
+          var mergedC = data.chiasms.concat(savedChiasms.filter(function(c){ return !data.chiasms.find(function(d){return d.id===c.id;}); }));
+          setSavedChiasms(mergedC); await storageSave("chiasms-v1", mergedC);
+        }
+        if (data.library && Array.isArray(data.library)) {
+          var mergedL = data.library.concat(library.filter(function(l){ return !data.library.find(function(d){return d.id===l.id;}); }));
+          setLibrary(mergedL); await storageSave(STORAGE_LIBRARY, mergedL);
+        }
+        setImportMsg("✅ 복원 완료! 설교 "+((data.sermons||[]).length)+"편, 키아즘 "+((data.chiasms||[]).length)+"개, 라이브러리 "+((data.library||[]).length)+"개.");
+        setImportStatus("ok");
+      } catch(err) {
+        setImportMsg("❌ 오류: 올바른 백업 파일이 아닙니다."); setImportStatus("error");
+      }
+      e.target.value = "";
+    };
+    reader.readAsText(file, "UTF-8");
   }
 
   async function importFromJson() {
@@ -765,7 +872,12 @@ ${korLines.join("\n")}
     setSaveMsg("");setSaveStatus("saving");
     var entry={id:Date.now(),title:saveTitle.trim(),refLabel:refLabel,level:level,levelLabel:LEVELS[level].label,levelEmoji:LEVELS[level].emoji,content:sermonOut,korLines:korLines,themes:themes,styleName:activeLibObj?activeLibObj.name:null,date:new Date().toLocaleDateString("ko-KR"),time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})};
     var updated=[entry].concat(savedSermons);setSavedSermons(updated);
-    try{await storageSave(STORAGE_SERMONS,updated);setSaveStatus("saved");setTimeout(function(){setSaveStatus("");},3000);}catch(e){setSaveStatus("error");}
+    try{
+      await storageSave(STORAGE_SERMONS,updated);
+      setSaveStatus("saved");
+      await autoBackup(updated, savedChiasms, library);
+      setTimeout(function(){setSaveStatus("");},3000);
+    }catch(e){setSaveStatus("error");}
     setShowSaveModal(false);setSaveTitle("");setSaveMsg("");setMainTab("saved");
   }
   async function deleteSermon(id){
@@ -916,8 +1028,31 @@ ${korLines.join("\n")}
           {storageMode==="file"&&<div style={{marginTop:6,display:"inline-block",padding:"3px 14px",borderRadius:20,background:"rgba(20,83,45,.8)",color:"#86EFAC",fontSize:11,fontWeight:700}}>File Mode</div>}
           {storageMode==="cloud"&&<div style={{marginTop:6,display:"inline-block",padding:"3px 14px",borderRadius:20,background:"rgba(30,58,138,.8)",color:"#93C5FD",fontSize:11,fontWeight:700}}>Cloud Mode</div>}
           {saveStatus==="saving"&&<div style={sy.saveBar}>💾 저장 중...</div>}
-          {saveStatus==="saved"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(20,83,45,.9)",color:"#86EFAC"})}>✅ 저장 완료!</div>}
+          {saveStatus==="saved"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(20,83,45,.9)",color:"#86EFAC"})}>✅ 저장 완료! {_dirHandle?"📁 "+folderName+" 폴더에 자동 저장":"⬇️ 파일 다운로드됨"}</div>}
           {saveStatus==="error"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(153,27,27,.9)",color:"#FCA5A5"})}>❌ 저장 오류</div>}
+          {folderStatus==="saved"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(20,83,45,.9)",color:"#86EFAC"})}>📁 {folderName} 폴더에 저장 완료!</div>}
+          {folderStatus==="noapi"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(120,53,15,.9)",color:"#FDE68A"})}>⚠️ 이 브라우저는 폴더 저장을 지원하지 않습니다. Chrome/Edge를 사용해 주세요.</div>}
+
+          {/* 폴더 저장 배너 */}
+          {showFolderBanner&&(
+            <div style={{marginTop:12,padding:"12px 18px",background:"rgba(255,255,255,.10)",borderRadius:14,border:"1.5px solid rgba(255,255,255,.25)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              <span style={{fontSize:20}}>📁</span>
+              <div style={{flex:1,minWidth:180}}>
+                {folderName
+                  ?<div><div style={{fontSize:13,fontWeight:700,color:"#86EFAC"}}>이전 저장 폴더: {folderName}</div><div style={{fontSize:11,color:"#94A3B8",marginTop:2}}>페이지를 새로 열었습니다. 아래 버튼으로 폴더를 다시 연결하세요.</div></div>
+                  :<div><div style={{fontSize:13,fontWeight:700,color:"#F0F9FF"}}>저장 폴더를 지정하면 설교가 자동으로 파일로 저장됩니다</div><div style={{fontSize:11,color:"#94A3B8",marginTop:2}}>한 번만 선택하면 앱을 사용하는 동안 계속 그 폴더에 저장됩니다 (Chrome/Edge 권장)</div></div>
+                }
+              </div>
+              <div style={{display:"flex",gap:8,flexShrink:0}}>
+                <button style={{padding:"8px 16px",borderRadius:20,border:"none",background:"linear-gradient(135deg,#1D4ED8,#6366F1)",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}
+                  onClick={handlePickFolder}>
+                  📁 {folderName?"폴더 다시 연결":"저장 폴더 선택"}
+                </button>
+                <button style={{padding:"8px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.3)",background:"transparent",color:"#94A3B8",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif"}}
+                  onClick={function(){setShowFolderBanner(false);}}>✕</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 탭 */}
@@ -1176,7 +1311,7 @@ ${korLines.join("\n")}
                       저장하기를 누르면 메모도 함께 저장됩니다.
                     </p>
                     <textarea
-                      style={{width:"100%",minHeight:120,padding:"12px",borderRadius:10,border:"2px solid #DDD6FE",fontSize:13,fontFamily:"'Noto Sans KR',sans-serif",color:"#374151",background:"#fff",resize:"vertical",lineHeight:1.8,outline:"none"}}
+                      style={{width:"100%",minHeight:300,padding:"12px",borderRadius:10,border:"2px solid #DDD6FE",fontSize:13,fontFamily:"'Noto Sans KR',sans-serif",color:"#374151",background:"#fff",resize:"vertical",lineHeight:1.8,outline:"none"}}
                       placeholder="예: A-A' 구조에서 신실하심의 대조가 핵심이다. 중심절의 '은혜'는 헬라어 카리스로..."
                       value={chiasmMemo}
                       onChange={function(e){setChiasmMemo(e.target.value);}}/>
@@ -1328,46 +1463,57 @@ ${korLines.join("\n")}
               {/* 백업/복원 패널 */}
               {showBackup&&(
                 <div style={{marginBottom:16}}>
-                  {/* 내보내기 */}
-                  <div style={{background:"#EFF6FF",borderRadius:12,padding:"14px",marginBottom:12,border:"1.5px solid #BFDBFE"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:"#1D4ED8",marginBottom:8}}>📤 내보내기 (컴퓨터에 저장)</div>
-                    <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.6}}>
-                      아래 버튼을 누르면 전체 데이터가 텍스트로 표시됩니다.<br/>
-                      <b>전체 선택(Ctrl+A) → 복사(Ctrl+C)</b> 후 메모장에 붙여넣고 <b>.txt 파일로 저장</b>하세요.
-                    </p>
-                    <button style={{padding:"8px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",marginBottom:backupJson?10:0}}
-                      onClick={function(){setBackupJson(makeBackupJson());}}>
-                      📤 전체 데이터 내보내기
-                    </button>
-                    {backupJson&&(
-                      <div>
-                        <textarea readOnly style={{width:"100%",height:160,padding:"10px",borderRadius:8,border:"1.5px solid #BFDBFE",fontSize:11,fontFamily:"monospace",color:"#374151",background:"#fff",resize:"vertical",outline:"none",marginTop:8}}
-                          value={backupJson}
-                          onClick={function(e){e.target.select();}}/>
-                        <p style={{fontSize:11,color:"#6B7280",marginTop:4}}>💡 클릭하면 전체 선택됩니다. Ctrl+C로 복사 후 메모장에 저장하세요.</p>
+                  {/* 폴더 자동 저장 */}
+                  {FS_API_SUPPORTED&&(
+                    <div style={{background:_dirHandle?"#F0FDF4":"#EFF6FF",borderRadius:12,padding:"16px",marginBottom:12,border:"1.5px solid "+(_dirHandle?"#BBF7D0":"#BFDBFE")}}>
+                      <div style={{fontSize:13,fontWeight:700,color:_dirHandle?"#15803D":"#1D4ED8",marginBottom:6}}>
+                        {_dirHandle?"📁 폴더 자동 저장 연결됨":"📁 폴더 자동 저장 (권장)"}
                       </div>
-                    )}
+                      {_dirHandle
+                        ?<div>
+                           <p style={{fontSize:13,color:"#15803D",fontWeight:600,marginBottom:8}}>✅ [{folderName}] 폴더에 자동 저장 중</p>
+                           <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.7}}>설교/키아즘을 저장할 때마다 이 폴더의 <b>설교비서_백업.json</b> 파일이 자동 업데이트됩니다.</p>
+                           <button style={{padding:"8px 18px",borderRadius:10,border:"1.5px solid #BBF7D0",background:"#fff",color:"#15803D",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={handlePickFolder}>📁 폴더 변경</button>
+                         </div>
+                        :<div>
+                           <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.7}}>폴더를 한 번만 선택하면 저장할 때마다 자동으로 그 폴더에 저장됩니다.<br/><b>⚠️ 페이지를 새로 열면 폴더를 다시 연결해야 합니다.</b> (브라우저 보안 정책)</p>
+                           <button style={{padding:"10px 24px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",color:"#fff",fontSize:14,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={handlePickFolder}>📁 저장 폴더 선택하기</button>
+                         </div>
+                      }
+                    </div>
+                  )}
+
+                  {/* 수동 백업 */}
+                  <div style={{background:"#F8FAFF",borderRadius:12,padding:"14px",marginBottom:12,border:"1.5px solid #E5E7EB"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:6}}>⬇️ 수동 백업</div>
+                    <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.7}}>{_dirHandle?"폴더에 지금 즉시 저장합니다.":"백업 파일을 컴퓨터에 다운로드합니다."}</p>
+                    <button style={{padding:"9px 20px",borderRadius:10,border:"none",background:"#374151",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={downloadBackup}>
+                      {_dirHandle?"📁 지금 저장 ("+savedSermons.length+"편 · "+savedChiasms.length+"개 키아즘)":"⬇️ 파일로 다운로드 ("+savedSermons.length+"편 · "+savedChiasms.length+"개 키아즘)"}
+                    </button>
                   </div>
 
-                  {/* 가져오기 */}
-                  <div style={{background:"#F0FDF4",borderRadius:12,padding:"14px",border:"1.5px solid #BBF7D0"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:"#15803D",marginBottom:8}}>📥 가져오기 (복원)</div>
-                    <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.6}}>
-                      이전에 저장한 백업 파일을 열고 전체 내용을 복사한 후<br/>아래 박스에 붙여넣고 <b>가져오기</b> 버튼을 누르세요.
-                    </p>
-                    <textarea
-                      style={{width:"100%",height:120,padding:"10px",borderRadius:8,border:"1.5px solid #BBF7D0",fontSize:11,fontFamily:"monospace",color:"#374151",background:"#fff",resize:"vertical",outline:"none",marginBottom:8}}
-                      placeholder="백업 데이터를 여기에 붙여넣으세요..."
-                      value={importJson}
-                      onChange={function(e){setImportJson(e.target.value);setImportMsg("");}}/>
-                    <button style={{padding:"8px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#15803D,#16A34A)",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}
-                      onClick={importFromJson}>
-                      📥 가져오기 (복원)
+                  {/* 파일에서 복원 */}
+                  <div style={{background:"#F0FDF4",borderRadius:12,padding:"14px",marginBottom:12,border:"1.5px solid #BBF7D0"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#15803D",marginBottom:6}}>📂 파일에서 복원</div>
+                    <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.7}}>이전에 저장한 <b>.json 백업 파일</b>을 선택하면 자동으로 복원됩니다.</p>
+                    <input ref={importFileRef} type="file" accept=".json" style={{display:"none"}} onChange={handleImportFile}/>
+                    <button style={{padding:"9px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#15803D,#16A34A)",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={function(){if(importFileRef.current)importFileRef.current.click();}}>
+                      📂 백업 파일 선택해서 복원
                     </button>
-                    {importMsg&&(
-                      <p style={{fontSize:12,marginTop:8,color:importStatus==="ok"?"#15803D":"#DC2626",fontWeight:600}}>{importMsg}</p>
-                    )}
                   </div>
+
+                  {/* 텍스트 붙여넣기 (보조) */}
+                  <div style={{background:"#FAFAFA",borderRadius:12,padding:"14px",border:"1.5px solid #E5E7EB"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"#9CA3AF",marginBottom:6}}>📋 텍스트 붙여넣기 (보조 수단)</div>
+                    <textarea style={{width:"100%",height:80,padding:"10px",borderRadius:8,border:"1.5px solid #E5E7EB",fontSize:11,fontFamily:"monospace",color:"#374151",background:"#fff",resize:"vertical",outline:"none",marginBottom:8}}
+                      placeholder="JSON 백업 내용을 여기에 붙여넣어도 복원됩니다..."
+                      value={importJson} onChange={function(e){setImportJson(e.target.value);setImportMsg("");}}/>
+                    {importJson.trim()&&<button style={{padding:"6px 16px",borderRadius:8,border:"none",background:"#6B7280",color:"#fff",fontSize:12,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={importFromJson}>텍스트로 복원</button>}
+                  </div>
+
+                  {importMsg&&(
+                    <p style={{fontSize:13,marginTop:10,padding:"10px 14px",borderRadius:10,background:importStatus==="ok"?"#F0FDF4":"#FFF5F5",color:importStatus==="ok"?"#15803D":"#DC2626",fontWeight:600,border:"1px solid "+(importStatus==="ok"?"#BBF7D0":"#FEE2E2")}}>{importMsg}</p>
+                  )}
                 </div>
               )}
 
