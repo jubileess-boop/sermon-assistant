@@ -1033,8 +1033,7 @@ ${korLines.join("\n")}
                         {(showLang==="both"||showLang==="eng")&&engText&&(
                           <div>
                             <span style={sy.badgeEng}>{"🇺🇸 King James Version"}</span>
-                            <div style={{marginTop:6}}>{engText.split("
-").map(function(l,i){return l.trim()?<p key={i} style={{fontSize:14,color:"#374151",lineHeight:1.9,fontFamily:"Georgia,serif"}}>{l}</p>:null;})}</div>
+                            <div style={{marginTop:6}}>{engText.split("\n").map(function(l,i){return l.trim()?<p key={i} style={{fontSize:14,color:"#374151",lineHeight:1.9,fontFamily:"Georgia,serif"}}>{l}</p>:null;})}</div>
                           </div>
                         )}
                       </div>
@@ -1326,19 +1325,9 @@ ${korLines.join("\n")}
                             <button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>{"DEL"}</button>
                           </div>
                         </div>
-                        {lib.analysis&&(
-                          <div style={{background:"#F8FAFF",borderTop:"1px solid #E5E7EB",padding:"12px 16px"}}>
-                            {[["설교 스타일",lib.analysis.preachingStyle],["언어 톤",lib.analysis.toneAndVoice],["구조 패턴",lib.analysis.structurePattern],["신학 강조",lib.analysis.theologicalEmphasis],["자주 쓰는 표현",lib.analysis.keyPhrases],["종합 요약",lib.analysis.summary]].map(function(row,ri){return(
-                              <div key={ri} style={{display:"flex",gap:10,padding:"5px 0",borderBottom:ri<5?"1px solid #F1F5F9":"none",flexWrap:"wrap"}}>
-                                <span style={{fontSize:11,fontWeight:700,color:"#6B7280",minWidth:80,flexShrink:0}}>{row[0]}</span>
-                                <span style={{fontSize:12,color:ri===5?"#1D4ED8":"#374151",lineHeight:1.6,flex:1,fontWeight:ri===5?600:400}}>{row[1]}</span>
-                              </div>
-                            );})}
-                          </div>
-                        )}
+                        {lib.analysis&&<div style={{background:"#F8FAFF",borderTop:"1px solid #E5E7EB",padding:"12px 16px"}}>{[["설교 스타일",lib.analysis.preachingStyle],["언어 톤",lib.analysis.toneAndVoice],["구조 패턴",lib.analysis.structurePattern],["신학 강조",lib.analysis.theologicalEmphasis],["자주 쓰는 표현",lib.analysis.keyPhrases],["종합 요약",lib.analysis.summary]].map(function(row,ri){return(<div key={ri} style={{display:"flex",gap:10,padding:"5px 0",borderBottom:ri<5?"1px solid #F1F5F9":"none",flexWrap:"wrap"}}><span style={{fontSize:11,fontWeight:700,color:"#6B7280",minWidth:80,flexShrink:0}}>{row[0]}</span><span style={{fontSize:12,color:ri===5?"#1D4ED8":"#374151",lineHeight:1.6,flex:1,fontWeight:ri===5?600:400}}>{row[1]}</span></div>);})}  </div>}
                       </div>
-                    );}
-                  }
+                    );})}
                 </div>
               )}
             </div>
