@@ -914,9 +914,595 @@ ${korLines.join("\n")}
   }
 
   // ── 저장된 설교 뷰 ──
-  if(viewSermon){
-    var vLv=LEVELS[viewSermon.level];
-    return(
+  // ── viewSermon / viewChiasm 은 아래 return 안에서 모달로 처리 ──
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",minHeight:"100vh",background:"#F1F5F9",fontFamily:"'Noto Sans KR',sans-serif"}}>
+
+      {/* ── 상단 헤더 ── */}
+      <div style={{background:"linear-gradient(135deg,#1E3A8A,#1D4ED8)",padding:"0 24px",display:"flex",alignItems:"center",gap:16,height:56,flexShrink:0,boxShadow:"0 2px 12px rgba(0,0,0,.25)"}}>
+        <span style={{fontSize:22,color:"#93C5FD",fontFamily:"serif"}}>✝</span>
+        <span style={{fontSize:18,fontWeight:700,color:"#F0F9FF",fontFamily:"'Noto Serif KR',serif",letterSpacing:"-0.3px"}}>설교 비서</span>
+        <span style={{fontSize:11,color:"rgba(255,255,255,.5)",marginLeft:4}}>Claude AI</span>
+        <div style={{flex:1}}/>
+        {saveStatus==="saving"&&<span style={{fontSize:11,color:"#93C5FD"}}>💾 저장 중...</span>}
+        {saveStatus==="saved"&&<span style={{fontSize:11,color:"#86EFAC"}}>✅ 저장 완료!</span>}
+        {folderStatus==="saved"&&<span style={{fontSize:11,color:"#86EFAC"}}>📁 {folderName} 저장됨</span>}
+        {showFolderBanner&&!_dirHandle&&(
+          <button style={{padding:"5px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.4)",background:"transparent",color:"#fff",fontSize:11,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={handlePickFolder}>📁 저장 폴더 선택</button>
+        )}
+        {showFolderBanner&&_dirHandle&&(
+          <button style={{padding:"5px 12px",borderRadius:20,border:"1.5px solid #86EFAC",background:"transparent",color:"#86EFAC",fontSize:11,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={handlePickFolder}>📁 {folderName} 연결됨</button>
+        )}
+      </div>
+
+      {/* ── 본문: 사이드바 + 콘텐츠 ── */}
+      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+
+        {/* ── 왼쪽 사이드바 ── */}
+        <div style={{width:220,flexShrink:0,background:"#1E293B",display:"flex",flexDirection:"column",padding:"16px 12px",gap:6,overflowY:"auto"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#475569",letterSpacing:2,padding:"0 8px",marginBottom:4}}>메뉴</div>
+          <button onClick={function(){setMainTab("bible");}} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",borderRadius:10,border:"none",background:mainTab==="bible"?"linear-gradient(135deg,#2563EB,#1D4ED8)":"transparent",color:mainTab==="bible"?"#fff":"#94A3B8",textAlign:"left",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontWeight:mainTab==="bible"?700:400,fontSize:13}}>
+            <span style={{fontSize:16}}>📖</span><div><div>성경 검색</div><div style={{fontSize:10,opacity:.7,marginTop:1}}>본문 선택 및 불러오기</div></div>
+          </button>
+          <button onClick={function(){if(verseReady)setMainTab("chiasm");}} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",borderRadius:10,border:"none",background:mainTab==="chiasm"?"linear-gradient(135deg,#7C3AED,#6D28D9)":"transparent",color:mainTab==="chiasm"?"#fff":verseReady?"#94A3B8":"#3E4C5E",textAlign:"left",cursor:verseReady?"pointer":"not-allowed",fontFamily:"'Noto Sans KR',sans-serif",fontWeight:mainTab==="chiasm"?700:400,fontSize:13}}>
+            <span style={{fontSize:16,opacity:verseReady?1:.4}}>🔁</span><div><div style={{opacity:verseReady?1:.5}}>키아즘 연구</div><div style={{fontSize:10,opacity:.5,marginTop:1}}>{verseReady?"교차대구법 분석":"성경 검색 후 활성화"}</div></div>
+          </button>
+          <button onClick={function(){if(verseReady)setMainTab("sermon");}} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",borderRadius:10,border:"none",background:mainTab==="sermon"?"linear-gradient(135deg,#059669,#047857)":"transparent",color:mainTab==="sermon"?"#fff":verseReady?"#94A3B8":"#3E4C5E",textAlign:"left",cursor:verseReady?"pointer":"not-allowed",fontFamily:"'Noto Sans KR',sans-serif",fontWeight:mainTab==="sermon"?700:400,fontSize:13}}>
+            <span style={{fontSize:16,opacity:verseReady?1:.4}}>✝️</span><div><div style={{opacity:verseReady?1:.5}}>설교 생성</div><div style={{fontSize:10,opacity:.5,marginTop:1}}>{verseReady?"연령대별 설교 생성":"성경 검색 후 활성화"}</div></div>
+          </button>
+          <button onClick={function(){setMainTab("library");}} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",borderRadius:10,border:"none",background:mainTab==="library"?"linear-gradient(135deg,#B45309,#92400E)":"transparent",color:mainTab==="library"?"#fff":"#94A3B8",textAlign:"left",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontWeight:mainTab==="library"?700:400,fontSize:13}}>
+            <span style={{fontSize:16}}>📚</span><div><div>스타일 라이브러리</div><div style={{fontSize:10,opacity:.7,marginTop:1}}>설교 파일 등록·분석</div></div>
+          </button>
+          <div style={{height:1,background:"#334155",margin:"6px 0"}}/>
+          <button onClick={function(){setMainTab("saved");}} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",borderRadius:10,border:"none",background:mainTab==="saved"?"linear-gradient(135deg,#0F766E,#0D9488)":"transparent",color:mainTab==="saved"?"#fff":"#94A3B8",textAlign:"left",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontWeight:mainTab==="saved"?700:400,fontSize:13}}>
+            <span style={{fontSize:16}}>💾</span><div><div>저장된 설교</div><div style={{fontSize:10,opacity:.7,marginTop:1}}>{savedSermons.length}편 · 키아즘 {savedChiasms.length}개</div></div>
+          </button>
+          <div style={{flex:1}}/>
+          {verseReady&&(
+            <div style={{padding:"10px 12px",background:"rgba(255,255,255,.06)",borderRadius:10,border:"1px solid #334155"}}>
+              <div style={{fontSize:10,color:"#64748B",marginBottom:3}}>현재 본문</div>
+              <div style={{fontSize:12,color:"#CBD5E1",fontWeight:600,lineHeight:1.4}}>{refLabel}</div>
+              <div style={{fontSize:10,color:"#64748B",marginTop:2}}>{korLines.length}절</div>
+            </div>
+          )}
+          {activeLibObj&&(
+            <div style={{padding:"10px 12px",background:"rgba(37,99,235,.15)",borderRadius:10,border:"1px solid #2563EB"}}>
+              <div style={{fontSize:10,color:"#93C5FD",marginBottom:3}}>적용 스타일</div>
+              <div style={{fontSize:12,color:"#BFDBFE",fontWeight:600}}>{activeLibObj.name}</div>
+              <button style={{fontSize:10,color:"#64748B",background:"none",border:"none",cursor:"pointer",padding:0,marginTop:2}} onClick={function(){setActiveLib(null);}}>✕ 해제</button>
+            </div>
+          )}
+        </div>
+
+        {/* ── 오른쪽 콘텐츠 영역 ── */}
+        <div style={{flex:1,overflowY:"auto",padding:"20px 24px",minWidth:0}}>
+
+          {/* ════ 성경 검색 ════ */}
+          {mainTab==="bible"&&(
+            <div>
+              <div style={sy.pageTitle}>📖 성경 검색</div>
+              <div style={sy.card}>
+                <div style={sy.cardTitle}>📚 성경 책 선택 <span style={sy.dim}>(신구약 66권)</span></div>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                  {Object.keys(BIBLE_BOOKS).map(function(t){var books=BIBLE_BOOKS[t];return(<div key={t} style={{flex:1,minWidth:180}}><div style={sy.selLabel}>{t} · {books.length}권</div><select style={sy.sel} value={books.find(function(b){return b.name===book;})?book:""} onChange={function(e){if(e.target.value)setBook(e.target.value);}}><option value="">{t} 선택...</option>{books.map(function(b){return <option key={b.name} value={b.name}>{b.name}</option>;})}</select></div>);},)}
+                </div>
+                {book&&<div style={sy.infoTag}>📖 <b>{book}</b> — 총 {maxChap}장</div>}
+              </div>
+              {book&&(
+                <div style={sy.card}>
+                  <div style={sy.cardTitle}>🔢 본문 범위 선택</div>
+                  <div style={sy.rangeWrap}>
+                    <div style={sy.rangeGroup}>
+                      <div style={sy.rangeLabel}>📍 시작</div>
+                      <div style={{display:"flex",gap:8}}>
+                        <div style={{flex:1}}><div style={sy.selLabel}>장</div><select style={sy.sel} value={fromChap} onChange={function(e){setFromChap(e.target.value);}}><option value="">장</option>{Array.from({length:maxChap},function(_,i){return i+1;}).map(function(n){return <option key={n} value={n}>{n}장</option>;})}</select></div>
+                        <div style={{flex:1}}><div style={sy.selLabel}>절 ({fromChap?fromVerseMax:"?"}절)</div><select style={sy.sel} value={fromVerse} onChange={function(e){setFromVerse(e.target.value);}} disabled={!fromChap}><option value="">절</option>{Array.from({length:fromVerseMax},function(_,i){return i+1;}).map(function(n){return <option key={n} value={n}>{n}절</option>;})}</select></div>
+                      </div>
+                    </div>
+                    <div style={sy.arrow}>→</div>
+                    <div style={sy.rangeGroup}>
+                      <div style={sy.rangeLabel}>🏁 끝</div>
+                      <div style={{display:"flex",gap:8}}>
+                        <div style={{flex:1}}><div style={sy.selLabel}>장</div><select style={sy.sel} value={toChap} onChange={function(e){setToChap(e.target.value);}} disabled={!fromVerse}><option value="">장</option>{toChapOpts.map(function(n){return <option key={n} value={n}>{n}장</option>;})}</select></div>
+                        <div style={{flex:1}}><div style={sy.selLabel}>절 ({toChap?toVerseMax:"?"}절)</div><select style={sy.sel} value={toVerse} onChange={function(e){setToVerse(e.target.value);}} disabled={!toChap}><option value="">절</option>{toVerseOpts.map(function(n){return <option key={n} value={n}>{n}절</option>;})}</select></div>
+                      </div>
+                    </div>
+                  </div>
+                  {(book&&fromChap&&fromVerse&&toChap&&toVerse)&&<div style={sy.infoTag}>📌 <b>{refLabel}</b>{total>1&&<span style={{color:"#6B7280",fontWeight:400}}> · 총 {total}절</span>}</div>}
+                  {!fromChap&&<div style={sy.hint}>💡 시작 장을 먼저 선택하세요.</div>}
+                  {fromChap&&!fromVerse&&<div style={sy.hint}>💡 시작 절을 선택하세요.</div>}
+                  {fromVerse&&!toChap&&<div style={sy.hint}>💡 끝 장을 선택하세요.</div>}
+                  {toChap&&!toVerse&&<div style={sy.hint}>💡 끝 절을 선택하면 말씀이 자동으로 불러와집니다.</div>}
+                </div>
+              )}
+              {(vLoading||korLines.length>0||vError)&&(
+                <div style={sy.verseCard}>
+                  <div style={sy.verseHead}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                      <span style={sy.verseRef}>{refLabel||"말씀 불러오는 중..."}</span>
+                      {!vLoading&&engText&&<span style={sy.kjvBadge}>KJV ✓</span>}
+                      {vLoading&&<span style={{color:"rgba(255,255,255,.7)",fontSize:12}}>({loaded}/{total}절)</span>}
+                    </div>
+                    {!vLoading&&korLines.length>0&&(<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{[["both","한·영"],["kor","한국어"],["eng","English"]].map(function(item){var v=item[0];var l=item[1];return <button key={v} style={Object.assign({},sy.langBtn,showLang===v?sy.langBtnOn:{})} onClick={function(){setShowLang(v);}}>{l}</button>;})}</div>)}
+                  </div>
+                  <div style={{padding:"18px 20px 16px"}}>
+                    {vLoading&&(<div><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}><div style={sy.spin}/><div><p style={{fontSize:14,fontWeight:600,color:"#374151"}}>말씀 불러오는 중... ({loaded}/{total}절)</p><div style={{marginTop:6,width:200,height:5,background:"#E5E7EB",borderRadius:9}}><div style={{height:5,borderRadius:9,background:"linear-gradient(90deg,#3B82F6,#6366F1)",width:(total>0?(loaded/total*100):0)+"%",transition:"width .3s"}}/></div></div></div>{korLines.map(function(l,i){return <p key={i} style={{fontSize:13,color:"#9CA3AF",lineHeight:1.8}}>{l}</p>;})}</div>)}
+                    {vError&&<p style={{color:"#DC2626",fontSize:13}}>⚠️ {vError}</p>}
+                    {!vLoading&&korLines.length>0&&(<div>
+                      {(showLang==="both"||showLang==="kor")&&(<div><span style={sy.badgeKor}>🇰🇷 개역개정</span><div style={{marginTop:6}}>{korLines.map(function(l,i){return <p key={i} style={{fontSize:15,color:"#111827",lineHeight:2,fontFamily:"'Noto Serif KR',serif",fontWeight:500,marginBottom:2}}>{l}</p>;})}</div>{korCtx&&<p style={{fontSize:13,color:"#6B7280",marginTop:8}}>📌 {korCtx}</p>}{themes.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{themes.map(function(t,i){return <span key={i} style={sy.themeBadge}>{t}</span>;})}</div>}</div>)}
+                      {showLang==="both"&&engText&&<div style={{height:1,background:"#E5E7EB",margin:"14px 0"}}/>}
+                      {(showLang==="both"||showLang==="eng")&&engText&&(<div><span style={sy.badgeEng}>🇺🇸 King James Version</span><div style={{marginTop:6}}>{engText.split("\n").map(function(l,i){return l.trim()?<p key={i} style={{fontSize:14,color:"#374151",lineHeight:1.9,fontFamily:"Georgia,serif"}}>{l}</p>:null;})}</div></div>)}
+                    </div>)}
+                  </div>
+                </div>
+              )}
+              {verseReady&&(
+                <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:4}}>
+                  <button style={{flex:1,padding:"13px",background:"linear-gradient(135deg,#7C3AED,#6D28D9)",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setMainTab("chiasm");}}>🔁 키아즘 연구하기</button>
+                  <button style={{flex:1,padding:"13px",background:"linear-gradient(135deg,#059669,#047857)",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setMainTab("sermon");}}>✝️ 설교 생성하기</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ════ 키아즘 연구 ════ */}
+          {mainTab==="chiasm"&&(
+            <div>
+              <div style={sy.pageTitle}>🔁 키아즘 연구</div>
+              {!verseReady&&<div style={sy.hint}>💡 먼저 성경 검색에서 본문을 선택해주세요.</div>}
+              {verseReady&&(<div>
+                <div style={sy.infoTagGreen}>📌 분석 본문: <b>{refLabel}</b></div>
+                <div style={sy.card}><div style={sy.cardTitle}>📌 키아즘 제목</div><input style={sy.nameInput} placeholder="예: 요한복음 3장의 키아즘 구조" value={chiasmTitle} onChange={function(e){setChiasmTitle(e.target.value);}}/></div>
+                <div style={sy.card}>
+                  <div style={sy.cardTitle}>🔢 키아즘 프레임</div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {CHIASM_FRAMES.map(function(f){var isOn=chiasmFrame===f.value;return(<button key={f.value} style={{padding:"6px 14px",borderRadius:20,border:isOn?"2px solid #7C3AED":"1.5px solid #E5E7EB",background:isOn?"#7C3AED":"#F9FAFB",color:isOn?"#fff":"#374151",fontSize:12,fontWeight:isOn?700:400,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setChiasmFrame(f.value);}}>{f.label}</button>);})}
+                  </div>
+                </div>
+                <div style={sy.card}>
+                  <div style={sy.cardTitle}>📋 분석 구조 입력</div>
+                  <div style={{background:"#F8F5FF",borderRadius:14,padding:"16px",border:"1.5px solid #DDD6FE"}}>
+                    {chiasmLabels.map(function(label,i){var isC=label.indexOf("중심")>-1;return(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                        <span style={{fontWeight:700,color:isC?"#7C3AED":"#4F46E5",minWidth:70,fontSize:13,flexShrink:0}}>{label}</span>
+                        <input style={{flex:1,padding:"8px 12px",borderRadius:8,border:isC?"2px solid #7C3AED":"1.5px solid #E5E7EB",fontSize:13,fontFamily:"'Noto Sans KR',sans-serif",background:isC?"#F5F3FF":"#fff",color:"#111827",outline:"none"}}
+                          placeholder={isC?"중심 내용 입력":"내용 입력"} value={chiasmStructure[i]||""}
+                          onChange={function(e){var s=Object.assign({},chiasmStructure);s[i]=e.target.value;setChiasmStructure(s);}}/>
+                      </div>
+                    );})}
+                  </div>
+                </div>
+                <div style={sy.card}><div style={sy.cardTitle}>⭐ 중심절</div><input style={{...sy.nameInput,border:"2px solid #7C3AED"}} placeholder="예: 3절 — 하나님이 세상을 이처럼 사랑하사..." value={chiasmCenter} onChange={function(e){setChiasmCenter(e.target.value);}}/></div>
+                <button style={{width:"100%",padding:"14px",background:chiasmLoading||!chiasmCenter.trim()?"#CBD5E1":"linear-gradient(135deg,#7C3AED,#6D28D9)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:chiasmLoading||!chiasmCenter.trim()?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:12}}
+                  onClick={genChiasmAnalysis} disabled={chiasmLoading||!chiasmCenter.trim()}>
+                  {chiasmLoading?<><div style={sy.spinSm}/>키아즘 분석 중...</>:<>🔍 키아즘 분석 실행</>}
+                </button>
+                {!chiasmCenter.trim()&&<div style={sy.hint}>💡 중심절을 입력해야 분석을 실행할 수 있습니다.</div>}
+                {(chiasmLoading||chiasmAnalysis)&&(
+                  <div style={{...sy.resultCard,borderColor:"#DDD6FE",marginBottom:16}}>
+                    <div style={{...sy.resultHead,background:"linear-gradient(135deg,#7C3AED,#6D28D9)"}}>
+                      <span style={{fontSize:20}}>🔁</span>
+                      <div style={{flex:1}}><div style={{fontSize:15,fontWeight:700,color:"#fff",fontFamily:"'Noto Serif KR',serif"}}>{chiasmTitle||"키아즘 분석 결과"}</div><div style={{fontSize:11,color:"rgba(255,255,255,.75)",marginTop:2}}>{refLabel} · {chiasmFrame}단</div></div>
+                      {!chiasmLoading&&chiasmAnalysis&&(<div style={{display:"flex",gap:8}}>
+                        <button style={sy.saveBtn} onClick={function(){openChiasmSaveModal("chiasm");}}>💾 저장</button>
+                        <button style={{...sy.saveBtn,background:"rgba(255,255,255,.25)"}} onClick={function(){genSermonFromChiasm();}}>설교 생성</button>
+                      </div>)}
+                    </div>
+                    <div style={{...sy.resultBody,background:"#FAF5FF"}}>
+                      {chiasmLoading?<div style={sy.loadBox}><div style={sy.spinLg}/><p style={sy.loadTxt}>🔍 키아즘 구조를 분석하고 있습니다...</p></div>:<div>{renderMd(chiasmAnalysis)}</div>}
+                    </div>
+                    {!chiasmLoading&&chiasmAnalysis&&(
+                      <div style={{borderTop:"2px solid #DDD6FE",background:"#F5F3FF",padding:"18px 22px"}}>
+                        <div style={{fontSize:13,fontWeight:700,color:"#7C3AED",marginBottom:8}}>✏️ 나의 분석 메모</div>
+                        <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.6}}>키아즘 구조에 대한 생각, 설교 아이디어를 자유롭게 기록하세요.</p>
+                        <textarea style={{width:"100%",minHeight:300,padding:"12px",borderRadius:10,border:"2px solid #DDD6FE",fontSize:13,fontFamily:"'Noto Sans KR',sans-serif",color:"#374151",background:"#fff",resize:"vertical",lineHeight:1.8,outline:"none"}}
+                          placeholder="예: A-A' 구조에서 신실하심의 대조가 핵심이다..." value={chiasmMemo} onChange={function(e){setChiasmMemo(e.target.value);}}/>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {(chiasmSermonLoading||chiasmSermonOut)&&(function(){var clv=LEVELS[chiasmSermonLevel];return(
+                  <div style={{...sy.resultCard,borderColor:clv.border,marginBottom:16}}>
+                    <div style={{...sy.resultHead,background:"linear-gradient(135deg,#7C3AED,#6D28D9)"}}>
+                      <span style={{fontSize:20}}>🔁</span>
+                      <div style={{flex:1}}><div style={{fontSize:15,fontWeight:700,color:"#fff",fontFamily:"'Noto Serif KR',serif"}}>키아즘 기반 {clv.label} 설교</div><div style={{fontSize:11,color:"rgba(255,255,255,.75)",marginTop:2}}>{refLabel}</div></div>
+                      {!chiasmSermonLoading&&chiasmSermonOut&&(<div style={{display:"flex",gap:6}}>
+                        <button style={sy.saveBtn} onClick={function(){openChiasmSaveModal("chiasmSermon");}}>💾 저장</button>
+                        <button style={{...sy.saveBtn,fontSize:11}} onClick={function(){setShowChiasmExport(!showChiasmExport);}}>Export</button>
+                      </div>)}
+                    </div>
+                    <div style={{...sy.resultBody,background:clv.bg}}>
+                      {chiasmSermonLoading?<div style={sy.loadBox}><div style={sy.spinLg}/><p style={sy.loadTxt}>✍️ 키아즘 분석을 반영하여 설교 작성 중...</p></div>:<div>{renderMd(chiasmSermonOut)}</div>}
+                    </div>
+                  </div>
+                );})()}
+                {chiasmAnalysis&&!chiasmLoading&&(
+                  <div style={sy.card}>
+                    <div style={sy.cardTitle}>✝️ 키아즘 분석 기반 설교 생성</div>
+                    <div style={sy.selLabel}>👥 연령대</div>
+                    <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+                      {Object.keys(LEVELS).map(function(key){var cfg=LEVELS[key];var isOn=chiasmSermonLevel===key;return(<button key={key} style={{...sy.lvBtn,...(isOn?{background:cfg.gradient,color:"#fff",border:"2px solid transparent"}:{})}} onClick={function(){setChiasmSermonLevel(key);}}><span style={{fontSize:22}}>{cfg.emoji}</span><span style={{fontSize:13,fontWeight:700}}>{cfg.label}</span><span style={{fontSize:11,opacity:.7}}>{cfg.age}</span></button>);})}
+                    </div>
+                    <button style={{width:"100%",padding:"14px",background:chiasmSermonLoading?"#CBD5E1":"linear-gradient(135deg,#7C3AED,#6D28D9)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:chiasmSermonLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}
+                      onClick={genSermonFromChiasm} disabled={chiasmSermonLoading}>
+                      {chiasmSermonLoading?<><div style={sy.spinSm}/>설교 작성 중...</>:<>🔁 키아즘으로 {LEVELS[chiasmSermonLevel].label} 설교 생성</>}
+                    </button>
+                    {showChiasmExport&&chiasmSermonOut&&(<div style={{marginTop:12}}><div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:6}}>📋 텍스트 내보내기</div><textarea readOnly style={{width:"100%",height:280,padding:"12px",borderRadius:10,border:"1.5px solid #E5E7EB",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif",color:"#374151",background:"#F9FAFB",resize:"vertical",lineHeight:1.7,outline:"none"}} value={makeExportText((chiasmTitle||refLabel)+" 키아즘 설교",refLabel,korLines,chiasmSermonOut)} onClick={function(e){e.target.select();}}/></div>)}
+                    {chiasmSermonOut&&!chiasmSermonLoading&&(<button style={{width:"100%",marginTop:12,padding:"13px",background:"linear-gradient(135deg,#7C3AED,#6D28D9)",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){openChiasmSaveModal("chiasmSermon");}}>💾 설교 저장 후 처음으로</button>)}
+                  </div>
+                )}
+                {savedChiasms.length>0&&(
+                  <div style={sy.card}><div style={sy.cardTitle}>저장된 키아즘 연구 ({savedChiasms.length}개)</div>
+                    {savedChiasms.map(function(c){return(
+                      <div key={c.id} style={sy.sermonCard}>
+                        <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"14px 16px"}}>
+                          <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#7C3AED,#6D28D9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🔁</div>
+                          <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700,color:"#111827",marginBottom:2}}>{c.title}</div><div style={{fontSize:11,color:"#9CA3AF"}}>{c.refLabel} · {c.frame}단 · {c.date}</div></div>
+                          <button style={sy.viewBtn} onClick={function(){setViewChiasm(c);}}>View</button>
+                          <button style={sy.delBtnSm} onClick={function(){setChiasmDeleteConfirm(c.id);}}>DEL</button>
+                        </div>
+                        {chiasmDeleteConfirm===c.id&&(<div style={sy.confirmBox}><p style={{fontSize:13,color:"#374151",marginBottom:10}}>삭제할까요?</p><div style={{display:"flex",gap:8}}><button style={sy.modalCancelBtn} onClick={function(){setChiasmDeleteConfirm(null);}}>취소</button><button style={{...sy.modalSaveBtn,background:"linear-gradient(135deg,#DC2626,#B91C1C)"}} onClick={function(){deleteChiasm(c.id);}}>삭제</button></div></div>)}
+                      </div>
+                    );})}
+                  </div>
+                )}
+              </div>)}
+            </div>
+          )}
+
+          {/* ════ 설교 생성 ════ */}
+          {mainTab==="sermon"&&(
+            <div>
+              <div style={sy.pageTitle}>✝️ 설교 생성</div>
+              {!verseReady&&<div style={sy.hint}>💡 먼저 성경 검색에서 본문을 선택해주세요.</div>}
+              {verseReady&&(<div>
+                <div style={sy.infoTagGreen}>📌 본문: <b>{refLabel}</b></div>
+                {activeLibObj&&<div style={{...sy.infoTagGreen,marginTop:6,borderColor:"#BFDBFE",background:"#EFF6FF",color:"#1D4ED8"}}>🎨 {activeLibObj.name} 스타일 적용 중</div>}
+                <div style={sy.card}>
+                  <div style={sy.cardTitle}>👥 연령대 선택</div>
+                  <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+                    {Object.keys(LEVELS).map(function(key){var cfg=LEVELS[key];var isOn=level===key;return(<button key={key} style={{...sy.lvBtn,...(isOn?{background:cfg.gradient,color:"#fff",border:"2px solid transparent",transform:"translateY(-2px)"}:{})}} onClick={function(){setLevel(key);}}><span style={{fontSize:24}}>{cfg.emoji}</span><span style={{fontSize:13,fontWeight:700}}>{cfg.label}</span><span style={{fontSize:11,opacity:.7}}>{cfg.age}</span></button>);})}
+                  </div>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"12px 14px",borderRadius:12,border:"1.5px solid "+lv.color+"33",background:lv.bg,marginBottom:14}}>
+                    <span style={{fontSize:18}}>{lv.emoji}</span>
+                    <div><div style={{fontSize:13,fontWeight:700,color:lv.color}}>{lv.label} ({lv.age})</div><div style={{fontSize:12,color:"#6B7280",marginTop:2}}>{level==="children"&&"쉬운 비유·활동 중심"}{level==="youth"&&"공감 스토리·도전 중심"}{level==="adult"&&"신학적 깊이·원어 분석"}</div></div>
+                  </div>
+                  <button style={{width:"100%",padding:"14px",background:sLoading?"#CBD5E1":lv.gradient,color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:sLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}
+                    onClick={genSermon} disabled={sLoading}>
+                    {sLoading?<><div style={sy.spinSm}/>설교 작성 중...</>:<>{lv.emoji} {lv.label} 설교 생성하기</>}
+                  </button>
+                </div>
+                {(sLoading||sermonOut)&&(
+                  <div style={{...sy.resultCard,borderColor:lv.border,marginBottom:16}}>
+                    <div style={{...sy.resultHead,background:lv.gradient}}>
+                      <span style={{fontSize:20}}>{lv.emoji}</span>
+                      <div style={{flex:1}}><div style={{fontSize:15,fontWeight:700,color:"#fff",fontFamily:"'Noto Serif KR',serif"}}>{lv.label} 설교 자료</div><div style={{fontSize:11,color:"rgba(255,255,255,.75)",marginTop:1}}>{refLabel}</div></div>
+                      {!sLoading&&sermonOut&&(<div style={{display:"flex",gap:6}}>
+                        <button style={sy.saveBtn} onClick={openSaveModal}>💾 저장</button>
+                        <button style={{...sy.saveBtn,fontSize:11}} onClick={function(){setShowExport(!showExport);}}>Export</button>
+                      </div>)}
+                    </div>
+                    <div style={{...sy.resultBody,background:lv.bg}}>
+                      {sLoading?<div style={sy.loadBox}><div style={sy.spinLg}/><p style={sy.loadTxt}>✍️ {lv.label} 맞춤 설교를 작성하고 있습니다...</p></div>:<div>{renderMd(sermonOut)}</div>}
+                    </div>
+                  </div>
+                )}
+                {showExport&&sermonOut&&(<div style={sy.card}><div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:6}}>📋 텍스트 내보내기</div><textarea readOnly style={{width:"100%",height:280,padding:"12px",borderRadius:10,border:"1.5px solid #E5E7EB",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif",color:"#374151",background:"#F9FAFB",resize:"vertical",lineHeight:1.7,outline:"none"}} value={makeExportText(refLabel+" "+lv.label+" 설교",refLabel,korLines,sermonOut)} onClick={function(e){e.target.select();}}/></div>)}
+                {sermonOut&&!sLoading&&(<button style={{width:"100%",marginTop:4,padding:"13px",background:lv.gradient,color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={openSaveModal}>💾 설교 저장하기</button>)}
+              </div>)}
+            </div>
+          )}
+
+          {/* ════ 스타일 라이브러리 ════ */}
+          {mainTab==="library"&&(
+            <div>
+              <div style={sy.pageTitle}>📚 스타일 라이브러리</div>
+              <div style={{display:"flex",gap:8,marginBottom:12}}>
+                {[["upload","📤 설교 등록"],["sermons","📖 원문 열람"],["styles","🎨 스타일 분석"]].map(function(item){var k=item[0];var l=item[1];return(<button key={k} style={{flex:1,padding:"9px 6px",borderRadius:12,border:libSubTab===k?"2px solid #B45309":"1.5px solid #E5E7EB",background:libSubTab===k?"#92400E":"#F9FAFB",color:libSubTab===k?"#fff":"#374151",fontSize:12,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setLibSubTab(k);}}>{l}</button>);})}
+              </div>
+              {libSubTab==="upload"&&(
+                <div style={sy.card}>
+                  <div style={sy.cardTitle}>📤 나의 설교 파일 등록</div>
+                  <p style={{fontSize:13,color:"#6B7280",marginBottom:14,lineHeight:1.7}}>설교 원고를 업로드하면 원문이 저장되고 AI가 스타일을 분석합니다. <b>(pdf · docx · txt)</b></p>
+                  <div style={{marginBottom:12}}><div style={sy.selLabel}>📛 설교 제목</div><input style={sy.nameInput} placeholder="예: 2024년 부활절 설교" value={upName} onChange={function(e){setUpName(e.target.value);}}/></div>
+                  <div style={{marginBottom:12}}><div style={sy.selLabel}>📖 성경책 카테고리</div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{Object.keys(BIBLE_BOOKS).map(function(t){var books=BIBLE_BOOKS[t];return(<div key={t} style={{flex:1,minWidth:150}}><div style={{fontSize:11,color:"#9CA3AF",marginBottom:4}}>{t}</div><select style={sy.sel} value={upBookCat} onChange={function(e){setUpBookCat(e.target.value);}}><option value="">성경책 선택...</option>{books.map(function(b){return <option key={b.name} value={b.name}>{b.name}</option>;})}</select></div>);})}</div></div>
+                  <div style={{marginBottom:12}}><div style={sy.selLabel}>🏷️ 주제 카테고리</div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{SERMON_TOPICS.map(function(topic){var isOn=upTopics.indexOf(topic.value)>-1;return(<button key={topic.value} style={{padding:"5px 12px",borderRadius:20,border:isOn?"2px solid "+topic.color:"1.5px solid #E5E7EB",background:isOn?topic.color:"#F9FAFB",color:isOn?"#fff":"#374151",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){if(isOn)setUpTopics(upTopics.filter(function(t){return t!==topic.value;}));else setUpTopics(upTopics.concat([topic.value]));}}>{topic.emoji} {topic.label}</button>);})}</div></div>
+                  <div style={{marginBottom:12}}><div style={sy.selLabel}>📁 파일 선택</div>
+                    <div style={sy.dropArea} onClick={function(){if(fileRef.current)fileRef.current.click();}}>
+                      <input ref={fileRef} type="file" accept=".pdf,.docx,.txt" multiple style={{display:"none"}} onChange={function(e){setUpFiles(Array.from(e.target.files));}}/>
+                      {upFiles.length===0?<div style={{textAlign:"center"}}><div style={{fontSize:32,marginBottom:8}}>📂</div><p style={{fontSize:14,color:"#6B7280"}}>클릭하여 파일 선택</p><p style={{fontSize:12,color:"#9CA3AF",marginTop:4}}>PDF · DOCX · TXT 지원</p></div>
+                        :<div style={{width:"100%"}}>{upFiles.map(function(f,i){return <div key={i} style={sy.fileItem}><span style={{fontSize:16}}>{f.name.endsWith(".pdf")?"📄":f.name.endsWith(".docx")?"📝":"📃"}</span><span style={{fontSize:13,color:"#374151",flex:1}}>{f.name}</span><span style={{fontSize:11,color:"#9CA3AF"}}>{(f.size/1024).toFixed(0)}KB</span></div>;})}<p style={{fontSize:12,color:"#6B7280",marginTop:8,textAlign:"center"}}>클릭하여 변경</p></div>
+                      }
+                    </div>
+                  </div>
+                  {upError&&<p style={{color:"#DC2626",fontSize:13,marginBottom:8}}>⚠️ {upError}</p>}
+                  {upProgress&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#EFF6FF",borderRadius:10,marginBottom:10}}><div style={sy.spinSm2}/><span style={{fontSize:13,color:"#1D4ED8"}}>{upProgress}</span></div>}
+                  <button style={{width:"100%",padding:"14px",background:upLoading?"#CBD5E1":"linear-gradient(135deg,#B45309,#92400E)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:upLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}} onClick={handleUpload} disabled={upLoading}>
+                    {upLoading?<><div style={sy.spinSm}/>등록 중...</>:<>🔍 업로드 및 등록</>}
+                  </button>
+                </div>
+              )}
+              {libSubTab==="sermons"&&(
+                <div>
+                  <div style={sy.card}>
+                    <div style={{fontSize:14,fontWeight:700,color:"#111827",marginBottom:10}}>📖 등록된 설교 원문 ({library.length}편)</div>
+                    <input style={{...sy.nameInput,marginBottom:10}} placeholder="🔍 제목으로 검색..." value={libSearch} onChange={function(e){setLibSearch(e.target.value);}}/>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
+                      <button style={{padding:"4px 10px",borderRadius:20,border:libBookFilter===""?"2px solid #1D4ED8":"1.5px solid #E5E7EB",background:libBookFilter===""?"#1D4ED8":"#F9FAFB",color:libBookFilter===""?"#fff":"#374151",fontSize:11,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setLibBookFilter("");}}>전체</button>
+                      {Array.from(new Set(library.filter(function(l){return l.bookCat;}).map(function(l){return l.bookCat;}))).map(function(b){return(<button key={b} style={{padding:"4px 10px",borderRadius:20,border:libBookFilter===b?"2px solid #1D4ED8":"1.5px solid #E5E7EB",background:libBookFilter===b?"#1D4ED8":"#F9FAFB",color:libBookFilter===b?"#fff":"#374151",fontSize:11,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setLibBookFilter(b);}}>{b}</button>);})}
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <button style={{padding:"4px 10px",borderRadius:20,border:libTopicFilter===""?"2px solid #6B7280":"1.5px solid #E5E7EB",background:libTopicFilter===""?"#6B7280":"#F9FAFB",color:libTopicFilter===""?"#fff":"#374151",fontSize:11,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setLibTopicFilter("");}}>전체</button>
+                      {SERMON_TOPICS.map(function(topic){return(<button key={topic.value} style={{padding:"4px 10px",borderRadius:20,border:libTopicFilter===topic.value?"2px solid "+topic.color:"1.5px solid #E5E7EB",background:libTopicFilter===topic.value?topic.color:"#F9FAFB",color:libTopicFilter===topic.value?"#fff":"#374151",fontSize:11,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setLibTopicFilter(topic.value);}}>{topic.emoji} {topic.label}</button>);})}
+                    </div>
+                  </div>
+                  {(function(){
+                    var filtered=library.filter(function(l){var mS=!libSearch||l.name.indexOf(libSearch)>-1;var mB=!libBookFilter||l.bookCat===libBookFilter;var mT=!libTopicFilter||(l.topics&&l.topics.indexOf(libTopicFilter)>-1);return mS&&mB&&mT;});
+                    if(filtered.length===0)return <div style={sy.emptyBox}><p style={{color:"#9CA3AF",fontSize:13}}>해당 조건의 설교가 없습니다.</p></div>;
+                    return filtered.map(function(lib){var isOpen=libOpenId===lib.id;return(
+                      <div key={lib.id} style={sy.libCard}>
+                        <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"14px 16px"}}>
+                          <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>📖</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:14,fontWeight:700,color:"#111827",marginBottom:3}}>{lib.name}</div>
+                            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:3}}>
+                              {lib.bookCat&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:20,background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE",fontWeight:600}}>📖 {lib.bookCat}</span>}
+                              {lib.topics&&lib.topics.map(function(t){var topic=SERMON_TOPICS.find(function(s){return s.value===t;});if(!topic)return null;return <span key={t} style={{fontSize:11,padding:"2px 8px",borderRadius:20,background:topic.color+"22",color:topic.color,border:"1px solid "+topic.color+"44",fontWeight:600}}>{topic.emoji} {topic.label}</span>;})}
+                            </div>
+                            <div style={{fontSize:11,color:"#9CA3AF"}}>{lib.date} · 파일 {lib.fileCount}개</div>
+                          </div>
+                          <div style={{display:"flex",gap:6,flexShrink:0}}>
+                            {lib.text&&<button style={sy.viewBtn} onClick={function(){setLibOpenId(isOpen?null:lib.id);}}>{isOpen?"접기":"📄 원문"}</button>}
+                            <button style={{...sy.useBtn,...(activeLib===lib.id?sy.useBtnOn:{})}} onClick={function(){if(activeLib===lib.id){setActiveLib(null);}else{setActiveLib(lib.id);setMainTab("sermon");}}}>{activeLib===lib.id?"✓ 사용 중":"스타일 적용"}</button>
+                            <button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>DEL</button>
+                          </div>
+                        </div>
+                        {isOpen&&lib.text&&(<div style={{borderTop:"1px solid #E5E7EB",padding:"14px 16px",background:"#F8FAFF"}}><div style={{fontSize:12,fontWeight:700,color:"#6B7280",marginBottom:6}}>📄 설교 원문</div><div style={{maxHeight:400,overflowY:"auto",fontSize:13,color:"#374151",lineHeight:1.8,whiteSpace:"pre-wrap",background:"#fff",padding:"12px",borderRadius:10,border:"1px solid #E5E7EB"}}>{lib.text}</div></div>)}
+                      </div>
+                    );});
+                  })()}
+                </div>
+              )}
+              {libSubTab==="styles"&&(
+                <div>
+                  {library.filter(function(l){return l.analysis;}).length===0
+                    ?<div style={sy.emptyBox}><div style={{fontSize:36,marginBottom:10}}>🎨</div><p style={{color:"#6B7280",fontSize:13}}>분석된 스타일이 없습니다.</p></div>
+                    :library.filter(function(l){return l.analysis;}).map(function(lib){var isActive=activeLib===lib.id;return(
+                      <div key={lib.id} style={{...sy.libCard,...(isActive?sy.libCardOn:{})}}>
+                        <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"14px 16px"}}>
+                          <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700,color:"#111827"}}>{lib.name}</div><div style={{fontSize:11,color:"#9CA3AF",marginTop:2}}>{lib.date} · 파일 {lib.fileCount}개</div></div>
+                          <div style={{display:"flex",gap:6}}>
+                            <button style={{...sy.useBtn,...(isActive?sy.useBtnOn:{})}} onClick={function(){if(isActive){setActiveLib(null);}else{setActiveLib(lib.id);setMainTab("sermon");}}}>{isActive?"✓ 사용 중":"사용하기"}</button>
+                            <button style={sy.delBtnSm} onClick={function(){deleteLib(lib.id);}}>DEL</button>
+                          </div>
+                        </div>
+                        {lib.analysis&&(<div style={{background:"#F8FAFF",borderTop:"1px solid #E5E7EB",padding:"12px 16px"}}>{[["설교 스타일",lib.analysis.preachingStyle],["언어 톤",lib.analysis.toneAndVoice],["구조 패턴",lib.analysis.structurePattern],["신학 강조",lib.analysis.theologicalEmphasis],["자주 쓰는 표현",lib.analysis.keyPhrases],["종합 요약",lib.analysis.summary]].map(function(row,ri){return(<div key={ri} style={{display:"flex",gap:10,padding:"5px 0",borderBottom:ri<5?"1px solid #F1F5F9":"none",flexWrap:"wrap"}}><span style={{fontSize:11,fontWeight:700,color:"#6B7280",minWidth:80,flexShrink:0}}>{row[0]}</span><span style={{fontSize:12,color:ri===5?"#1D4ED8":"#374151",lineHeight:1.6,flex:1,fontWeight:ri===5?600:400}}>{row[1]}</span></div>);})}</div>)}
+                      </div>
+                    );}
+                  }
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ════ 저장된 설교 ════ */}
+          {mainTab==="saved"&&(
+            <div>
+              <div style={sy.pageTitle}>💾 저장된 설교</div>
+              <div style={sy.card}>
+                <div style={{display:"flex",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap"}}>
+                  <div style={{fontSize:14,fontWeight:700,color:"#111827",flex:1}}>설교 {savedSermons.length}편 · 키아즘 {savedChiasms.length}개</div>
+                  <button style={{padding:"6px 14px",borderRadius:20,border:"1.5px solid #E5E7EB",background:showBackup?"#1D4ED8":"#F9FAFB",color:showBackup?"#fff":"#6B7280",fontSize:12,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setShowBackup(!showBackup);setImportJson("");setImportMsg("");}}>
+                    {showBackup?"✕ 닫기":"🔄 백업 / 복원"}
+                  </button>
+                </div>
+                {showBackup&&(
+                  <div style={{marginBottom:14}}>
+                    {FS_API_SUPPORTED&&(
+                      <div style={{background:_dirHandle?"#F0FDF4":"#EFF6FF",borderRadius:12,padding:"12px",marginBottom:8,border:"1.5px solid "+(_dirHandle?"#BBF7D0":"#BFDBFE")}}>
+                        <div style={{fontSize:12,fontWeight:700,color:_dirHandle?"#15803D":"#1D4ED8",marginBottom:5}}>{_dirHandle?"📁 폴더 자동 저장 연결됨":"📁 폴더 자동 저장 (권장)"}</div>
+                        {_dirHandle?<div><p style={{fontSize:12,color:"#15803D",fontWeight:600,marginBottom:5}}>✅ [{folderName}] 폴더에 자동 저장 중</p><button style={{padding:"6px 14px",borderRadius:10,border:"1.5px solid #BBF7D0",background:"#fff",color:"#15803D",fontSize:12,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={handlePickFolder}>📁 폴더 변경</button></div>
+                          :<div><p style={{fontSize:12,color:"#6B7280",marginBottom:7,lineHeight:1.5}}>폴더를 한 번만 선택하면 저장할 때마다 자동으로 그 폴더에 저장됩니다.</p><button style={{padding:"8px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",color:"#fff",fontSize:12,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={handlePickFolder}>📁 저장 폴더 선택하기</button></div>}
+                      </div>
+                    )}
+                    <div style={{background:"#F8FAFF",borderRadius:12,padding:"12px",marginBottom:8,border:"1.5px solid #E5E7EB"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:5}}>⬇️ 수동 백업</div>
+                      <button style={{padding:"7px 16px",borderRadius:10,border:"none",background:"#374151",color:"#fff",fontSize:12,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={downloadBackup}>{_dirHandle?"📁 지금 저장":"⬇️ 파일로 다운로드"} ({savedSermons.length}편 · {savedChiasms.length}개)</button>
+                    </div>
+                    <div style={{background:"#F0FDF4",borderRadius:12,padding:"12px",marginBottom:8,border:"1.5px solid #BBF7D0"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#15803D",marginBottom:5}}>📂 파일에서 복원</div>
+                      <input ref={importFileRef} type="file" accept=".json" style={{display:"none"}} onChange={handleImportFile}/>
+                      <button style={{padding:"7px 16px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#15803D,#16A34A)",color:"#fff",fontSize:12,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){if(importFileRef.current)importFileRef.current.click();}}>📂 백업 파일 선택해서 복원</button>
+                    </div>
+                    <div style={{background:"#FAFAFA",borderRadius:12,padding:"12px",border:"1.5px solid #E5E7EB"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:"#9CA3AF",marginBottom:4}}>📋 텍스트 붙여넣기 (보조)</div>
+                      <textarea style={{width:"100%",height:60,padding:"8px",borderRadius:8,border:"1.5px solid #E5E7EB",fontSize:11,fontFamily:"monospace",color:"#374151",background:"#fff",resize:"vertical",outline:"none",marginBottom:5}} placeholder="JSON 백업 내용을 붙여넣어도 복원됩니다..." value={importJson} onChange={function(e){setImportJson(e.target.value);setImportMsg("");}}/>
+                      {importJson.trim()&&<button style={{padding:"5px 12px",borderRadius:8,border:"none",background:"#6B7280",color:"#fff",fontSize:11,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={importFromJson}>텍스트로 복원</button>}
+                    </div>
+                    {importMsg&&<p style={{fontSize:12,marginTop:8,padding:"7px 12px",borderRadius:8,background:importStatus==="ok"?"#F0FDF4":"#FFF5F5",color:importStatus==="ok"?"#15803D":"#DC2626",fontWeight:600,border:"1px solid "+(importStatus==="ok"?"#BBF7D0":"#FEE2E2")}}>{importMsg}</p>}
+                  </div>
+                )}
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <input style={{...sy.nameInput,flex:2,minWidth:160}} placeholder="🔍 제목, 구절, 내용으로 검색..." value={searchQuery} onChange={function(e){setSearchQuery(e.target.value);}}/>
+                  <select style={{...sy.sel,flex:1,minWidth:110}} value={filterLevel} onChange={function(e){setFilterLevel(e.target.value);}}>
+                    <option value="all">전체</option><option value="children">🌱 유치부</option><option value="youth">🔥 청소년부</option><option value="adult">✝️ 성인부</option>
+                  </select>
+                </div>
+              </div>
+              {savedSermons.length===0?<div style={sy.emptyBox}><div style={{fontSize:36,marginBottom:10}}>💾</div><p style={{color:"#6B7280",fontSize:13}}>아직 저장된 설교가 없습니다.</p></div>
+                :filteredSermons.length===0?<div style={sy.emptyBox}><p style={{color:"#9CA3AF",fontSize:13}}>검색 결과가 없습니다.</p></div>
+                :<div>{filteredSermons.map(function(s){var sLv=LEVELS[s.level];return(
+                  <div key={s.id} style={sy.sermonCard}>
+                    <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"14px 16px"}}>
+                      <div style={{width:36,height:36,borderRadius:10,background:sLv.gradient,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{sLv.emoji}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:14,fontWeight:700,color:"#111827",marginBottom:2}}>{s.title}</div>
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:3}}>
+                          <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20,background:sLv.bg,color:sLv.color,border:"1px solid "+sLv.border}}>{sLv.label}</span>
+                          <span style={{fontSize:11,color:"#6B7280",padding:"2px 8px",background:"#F1F5F9",borderRadius:20}}>{s.refLabel}</span>
+                          {s.styleName&&<span style={{fontSize:11,color:"#7C3AED",padding:"2px 8px",background:"#F5F3FF",borderRadius:20}}>🎨 {s.styleName}</span>}
+                        </div>
+                        <div style={{fontSize:11,color:"#9CA3AF"}}>📅 {s.date} {s.time}</div>
+                        <p style={{fontSize:12,color:"#6B7280",marginTop:4,lineHeight:1.5,overflow:"hidden",maxHeight:32}}>{s.content.replace(/[#*]/g,"").slice(0,80)}...</p>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
+                        <button style={sy.viewBtn} onClick={function(){setViewSermon(s);}}>View</button>
+                        <button style={sy.delBtnSm} onClick={function(){setDeleteConfirm(s.id);}}>DEL</button>
+                      </div>
+                    </div>
+                    {deleteConfirm===s.id&&(<div style={sy.confirmBox}><p style={{fontSize:13,color:"#374151",marginBottom:10}}>삭제할까요?</p><div style={{display:"flex",gap:8}}><button style={sy.modalCancelBtn} onClick={function(){setDeleteConfirm(null);}}>취소</button><button style={{...sy.modalSaveBtn,background:"linear-gradient(135deg,#DC2626,#B91C1C)"}} onClick={function(){deleteSermon(s.id);}}>삭제</button></div></div>)}
+                  </div>
+                );})}</div>
+              }
+              {savedChiasms.length>0&&(
+                <div style={{marginTop:14}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:8,paddingLeft:4}}>저장된 키아즘 연구 ({savedChiasms.length}개)</div>
+                  {savedChiasms.map(function(c){return(
+                    <div key={c.id} style={sy.sermonCard}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"14px 16px"}}>
+                        <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#7C3AED,#6D28D9)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🔁</div>
+                        <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700,color:"#111827",marginBottom:2}}>{c.title}</div><div style={{fontSize:11,color:"#9CA3AF"}}>{c.refLabel} · {c.frame}단 · {c.date}</div></div>
+                        <button style={sy.viewBtn} onClick={function(){setViewChiasm(c);}}>View</button>
+                        <button style={sy.delBtnSm} onClick={function(){setChiasmDeleteConfirm(c.id);}}>DEL</button>
+                      </div>
+                      {chiasmDeleteConfirm===c.id&&(<div style={sy.confirmBox}><p style={{fontSize:13,color:"#374151",marginBottom:10}}>삭제할까요?</p><div style={{display:"flex",gap:8}}><button style={sy.modalCancelBtn} onClick={function(){setChiasmDeleteConfirm(null);}}>취소</button><button style={{...sy.modalSaveBtn,background:"linear-gradient(135deg,#DC2626,#B91C1C)"}} onClick={function(){deleteChiasm(c.id);}}>삭제</button></div></div>)}
+                    </div>
+                  );})}
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* ── 저장된 설교 상세 모달 ── */}
+      {viewSermon&&(function(){
+        var vLv=LEVELS[viewSermon.level];
+        return(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:300,display:"flex",flexDirection:"column"}}>
+            <div style={{background:"linear-gradient(135deg,#1E3A8A,#1D4ED8)",padding:"12px 20px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+              <button style={{padding:"6px 14px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.4)",background:"rgba(255,255,255,.1)",color:"#fff",fontSize:13,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setViewSermon(null);setShowExport(false);}}>← 목록으로</button>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:15,fontWeight:700,color:"#F0F9FF"}}>{viewSermon.title}</div><div style={{fontSize:11,color:"rgba(255,255,255,.65)",marginTop:1}}>{viewSermon.date} · {viewSermon.refLabel}</div></div>
+              <button style={{padding:"5px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.1)",color:"#E2E8F0",fontSize:11,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setShowExport(!showExport);}}>📋 Export</button>
+              <button style={{padding:"5px 10px",borderRadius:20,border:"1.5px solid #FEE2E2",background:"rgba(239,68,68,.15)",color:"#FCA5A5",fontSize:11,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setDeleteConfirm(viewSermon.id);}}>DEL</button>
+            </div>
+            <div style={{flex:1,overflowY:"auto",padding:"20px 24px",background:"#F1F5F9"}}>
+              {showExport&&(<div style={sy.card}><div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:6}}>📋 텍스트 내보내기</div><textarea readOnly style={{width:"100%",height:280,padding:"12px",borderRadius:10,border:"1.5px solid #E5E7EB",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif",color:"#374151",background:"#F9FAFB",resize:"vertical",lineHeight:1.7,outline:"none"}} value={makeExportText(viewSermon.title,viewSermon.refLabel,viewSermon.korLines||[],viewSermon.content)} onClick={function(e){e.target.select();}}/></div>)}
+              <div style={{...sy.resultCard,borderColor:vLv.border,marginBottom:12}}>
+                <div style={{...sy.resultHead,background:vLv.gradient}}>
+                  <span style={{fontSize:20}}>{vLv.emoji}</span>
+                  <div style={{flex:1}}><div style={{fontSize:15,fontWeight:700,color:"#fff",fontFamily:"'Noto Serif KR',serif"}}>{viewSermon.title}</div><div style={{fontSize:11,color:"rgba(255,255,255,.75)",marginTop:1}}>{viewSermon.refLabel} · {viewSermon.levelLabel}{viewSermon.styleName?" · "+viewSermon.styleName+" 스타일":""}</div></div>
+                </div>
+                <div style={{...sy.resultBody,background:vLv.bg}}>
+                  {viewSermon.korLines&&viewSermon.korLines.length>0&&(<div style={{marginBottom:14,padding:"12px",background:"rgba(255,255,255,.7)",borderRadius:10,border:"1px solid "+vLv.border}}><span style={sy.badgeKor}>🇰🇷 본문 말씀</span><div style={{marginTop:5}}>{viewSermon.korLines.map(function(l,i){return <p key={i} style={{fontSize:14,color:"#111827",lineHeight:1.9,fontFamily:"'Noto Serif KR',serif",fontWeight:500}}>{l}</p>;})}</div></div>)}
+                  {renderMd(viewSermon.content)}
+                </div>
+              </div>
+              {deleteConfirm===viewSermon.id&&(<div style={{...sy.card,background:"#FFF5F5",border:"1.5px solid #FEE2E2"}}><p style={{fontSize:13,color:"#374151",marginBottom:10}}>이 설교를 삭제할까요?</p><div style={{display:"flex",gap:8}}><button style={sy.modalCancelBtn} onClick={function(){setDeleteConfirm(null);}}>취소</button><button style={{...sy.modalSaveBtn,background:"linear-gradient(135deg,#DC2626,#B91C1C)"}} onClick={function(){deleteSermon(viewSermon.id);}}>삭제</button></div></div>)}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── 저장된 키아즘 상세 모달 ── */}
+      {viewChiasm&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:300,display:"flex",flexDirection:"column"}}>
+          <div style={{background:"linear-gradient(135deg,#7C3AED,#6D28D9)",padding:"12px 20px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+            <button style={{padding:"6px 14px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.4)",background:"rgba(255,255,255,.1)",color:"#fff",fontSize:13,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setViewChiasm(null);}}>← 목록으로</button>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:15,fontWeight:700,color:"#F0F9FF"}}>{viewChiasm.title}</div><div style={{fontSize:11,color:"rgba(255,255,255,.65)",marginTop:1}}>{viewChiasm.date} · {viewChiasm.refLabel} · {viewChiasm.frame}단</div></div>
+            <button style={{padding:"5px 10px",borderRadius:20,border:"1.5px solid #FEE2E2",background:"rgba(239,68,68,.15)",color:"#FCA5A5",fontSize:11,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"}} onClick={function(){setChiasmDeleteConfirm(viewChiasm.id);}}>DEL</button>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:"20px 24px",background:"#F1F5F9"}}>
+            {chiasmDeleteConfirm===viewChiasm.id&&(<div style={{...sy.card,background:"#FFF5F5",border:"1.5px solid #FEE2E2",marginBottom:10}}><p style={{fontSize:13,color:"#374151",marginBottom:10}}>이 키아즘 연구를 삭제할까요?</p><div style={{display:"flex",gap:8}}><button style={sy.modalCancelBtn} onClick={function(){setChiasmDeleteConfirm(null);}}>취소</button><button style={{...sy.modalSaveBtn,background:"linear-gradient(135deg,#DC2626,#B91C1C)"}} onClick={function(){deleteChiasm(viewChiasm.id);}}>삭제</button></div></div>)}
+            <div style={sy.card}>
+              <div style={sy.cardTitle}>🔁 키아즘 구조 ({viewChiasm.frame}단)</div>
+              <div style={{marginBottom:8}}><span style={{fontSize:12,color:"#6B7280"}}>중심절: </span><span style={{fontSize:13,fontWeight:600,color:"#7C3AED"}}>{viewChiasm.center}</span></div>
+              {viewChiasm.labels.map(function(label,i){var isC=label.indexOf("중심")>-1;return(<div key={i} style={{display:"flex",gap:10,padding:"7px 10px",marginBottom:3,borderRadius:8,background:isC?"#F5F3FF":"#F8FAFC",border:isC?"2px solid #7C3AED":"1px solid #E5E7EB"}}><span style={{fontWeight:700,color:isC?"#7C3AED":"#4F46E5",minWidth:50,fontSize:12}}>{label}</span><span style={{fontSize:13,color:"#374151",flex:1}}>{viewChiasm.structure[i]||""}</span></div>);})}
+            </div>
+            <div style={{...sy.resultCard,borderColor:"#DDD6FE",marginBottom:12}}>
+              <div style={{...sy.resultHead,background:"linear-gradient(135deg,#7C3AED,#6D28D9)"}}>
+                <span style={{fontSize:20}}>🔁</span>
+                <div style={{flex:1}}><div style={{fontSize:15,fontWeight:700,color:"#fff",fontFamily:"'Noto Serif KR',serif"}}>{viewChiasm.title}</div><div style={{fontSize:11,color:"rgba(255,255,255,.75)",marginTop:1}}>{viewChiasm.refLabel} · {viewChiasm.frame}단</div></div>
+              </div>
+              <div style={{...sy.resultBody,background:"#FAF5FF"}}>
+                {renderMd(viewChiasm.analysis)}
+                {viewChiasm.memo&&(<div style={{marginTop:16,padding:"14px",background:"#F5F3FF",borderRadius:12,border:"2px solid #DDD6FE"}}><div style={{fontSize:13,fontWeight:700,color:"#7C3AED",marginBottom:6}}>✏️ 나의 분석 메모</div><p style={{fontSize:13,color:"#374151",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{viewChiasm.memo}</p></div>)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 저장 모달 (일반 설교) ── */}
+      {showSaveModal&&(<div style={sy.modalOverlay}><div style={sy.modal}><div style={sy.modalTitle}>💾 설교 저장하기</div><p style={{fontSize:13,color:"#6B7280",marginBottom:14}}>{refLabel} · {LEVELS[level].label}</p><div style={sy.selLabel}>설교 제목</div><input style={{...sy.nameInput,marginBottom:8}} value={saveTitle} onChange={function(e){setSaveTitle(e.target.value);}} placeholder="저장할 설교 제목을 입력하세요"/>{saveMsg&&<p style={{color:"#DC2626",fontSize:12,marginBottom:8}}>⚠️ {saveMsg}</p>}<div style={{display:"flex",gap:10,marginTop:8}}><button style={sy.modalCancelBtn} onClick={function(){setShowSaveModal(false);}}>CANCEL</button><button style={sy.modalSaveBtn} onClick={saveSermon}>저장</button></div></div></div>)}
+
+      {/* ── 키아즘 저장 모달 ── */}
+      {showChiasmSaveModal&&(<div style={sy.modalOverlay}><div style={sy.modal}><div style={sy.modalTitle}>{chiasmSaveType==="chiasm"?"🔁 키아즘 연구 저장":"🔁 키아즘 설교 저장"}</div><p style={{fontSize:13,color:"#6B7280",marginBottom:10}}>{chiasmSaveType==="chiasm"?refLabel+" · "+chiasmFrame+"단 키아즘":refLabel+" · "+LEVELS[chiasmSermonLevel].label}</p><p style={{fontSize:12,color:"#7C3AED",background:"#F5F3FF",padding:"8px 12px",borderRadius:8,marginBottom:12,lineHeight:1.6}}>💡 저장 후 화면이 초기화되어 처음으로 돌아갑니다.</p><div style={sy.selLabel}>제목</div><input style={{...sy.nameInput,marginBottom:8,border:"1.5px solid #DDD6FE"}} value={chiasmSaveTitle} onChange={function(e){setChiasmSaveTitle(e.target.value);}} placeholder="저장할 제목을 입력하세요"/>{chiasmSaveMsg&&<p style={{color:"#DC2626",fontSize:12,marginBottom:8}}>⚠️ {chiasmSaveMsg}</p>}<div style={{display:"flex",gap:10,marginTop:8}}><button style={sy.modalCancelBtn} onClick={function(){setShowChiasmSaveModal(false);}}>CANCEL</button><button style={{...sy.modalSaveBtn,background:"linear-gradient(135deg,#7C3AED,#6D28D9)"}} onClick={saveChiasmAll}>💾 저장 후 처음으로</button></div></div></div>)}
+
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}@keyframes spin{to{transform:rotate(360deg);}}select,input{appearance:auto;outline:none;}button{transition:all .15s ease;cursor:pointer;}button:hover:not(:disabled){opacity:.9;}::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:#F1F5F9;}::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:3px;}`}</style>
+    </div>
+  );
+}
+
+const sy={
+  pageTitle:{fontSize:20,fontWeight:700,color:"#111827",fontFamily:"'Noto Serif KR',serif",marginBottom:16,paddingBottom:10,borderBottom:"2px solid #E5E7EB"},
+  card:{background:"#fff",borderRadius:16,padding:"20px",marginBottom:12,boxShadow:"0 2px 12px rgba(0,0,0,.08)",border:"1px solid #E5E7EB"},
+  cardTitle:{fontSize:14,fontWeight:700,color:"#111827",marginBottom:12,fontFamily:"'Noto Serif KR',serif"},
+  dim:{fontSize:12,fontWeight:400,color:"#9CA3AF"},
+  selLabel:{fontSize:12,fontWeight:600,color:"#6B7280",marginBottom:5},
+  sel:{width:"100%",padding:"9px 12px",borderRadius:10,border:"1.5px solid #E5E7EB",fontSize:13,color:"#111827",background:"#F9FAFB",fontFamily:"'Noto Sans KR',sans-serif"},
+  nameInput:{width:"100%",padding:"10px 14px",borderRadius:10,border:"1.5px solid #E5E7EB",fontSize:14,color:"#111827",background:"#F9FAFB",fontFamily:"'Noto Sans KR',sans-serif"},
+  infoTag:{padding:"8px 14px",background:"#EFF6FF",border:"1.5px solid #BFDBFE",borderRadius:10,fontSize:13,color:"#1D4ED8",marginBottom:12},
+  infoTagGreen:{padding:"8px 14px",background:"#F0FDF4",border:"1.5px solid #BBF7D0",borderRadius:10,fontSize:13,color:"#15803D",marginBottom:12},
+  hint:{padding:"8px 14px",background:"#FFFBEB",border:"1.5px solid #FDE68A",borderRadius:10,fontSize:12,color:"#92400E",marginBottom:12},
+  rangeWrap:{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"},
+  rangeGroup:{flex:1,minWidth:180,background:"#F8FAFC",border:"1.5px solid #E5E7EB",borderRadius:12,padding:"12px 14px"},
+  rangeLabel:{fontSize:12,fontWeight:700,color:"#374151",marginBottom:8},
+  arrow:{fontSize:20,color:"#9CA3AF",fontWeight:700,userSelect:"none",flexShrink:0,alignSelf:"center"},
+  verseCard:{background:"#fff",borderRadius:16,overflow:"hidden",border:"2px solid #DBEAFE",marginBottom:12,boxShadow:"0 2px 12px rgba(0,0,0,.08)"},
+  verseHead:{background:"linear-gradient(135deg,#1E3A8A,#1D4ED8)",padding:"12px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8},
+  verseRef:{color:"#fff",fontFamily:"'Noto Serif KR',serif",fontSize:14,fontWeight:700},
+  kjvBadge:{background:"rgba(255,255,255,.2)",color:"#fff",fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:600},
+  langBtn:{padding:"3px 10px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.35)",background:"transparent",color:"rgba(255,255,255,.65)",fontSize:11,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"},
+  langBtnOn:{background:"rgba(255,255,255,.25)",color:"#fff",border:"1.5px solid rgba(255,255,255,.8)"},
+  badgeKor:{display:"inline-block",background:"#FFF1F2",border:"1px solid #FECDD3",color:"#BE123C",fontSize:11,fontWeight:700,padding:"2px 10px",borderRadius:20,marginBottom:5},
+  badgeEng:{display:"inline-block",background:"#EFF6FF",border:"1px solid #BFDBFE",color:"#1D4ED8",fontSize:11,fontWeight:700,padding:"2px 10px",borderRadius:20,marginBottom:5},
+  themeBadge:{padding:"3px 10px",background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:20,fontSize:11,color:"#1D4ED8",fontWeight:600},
+  lvBtn:{flex:1,minWidth:110,padding:"13px 8px",background:"#F9FAFB",border:"2px solid #E5E7EB",borderRadius:12,display:"flex",flexDirection:"column",alignItems:"center",gap:3,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"},
+  saveBtn:{padding:"7px 14px",borderRadius:20,border:"2px solid rgba(255,255,255,.5)",background:"rgba(255,255,255,.15)",color:"#fff",fontSize:12,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",flexShrink:0},
+  resultCard:{borderRadius:16,border:"2px solid",overflow:"hidden",boxShadow:"0 4px 20px rgba(0,0,0,.12)"},
+  resultHead:{padding:"14px 20px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"},
+  resultBody:{padding:"20px"},
+  loadBox:{textAlign:"center",padding:"40px 0"},
+  loadTxt:{color:"#374151",fontSize:14,fontWeight:600,marginBottom:4},
+  sermonCard:{background:"#fff",borderRadius:14,marginBottom:8,boxShadow:"0 2px 10px rgba(0,0,0,.08)",overflow:"hidden",border:"1px solid #E5E7EB"},
+  viewBtn:{padding:"5px 11px",borderRadius:8,border:"1.5px solid #BFDBFE",background:"#EFF6FF",color:"#1D4ED8",fontSize:11,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"},
+  delBtnSm:{padding:"5px 9px",borderRadius:8,border:"1.5px solid #FEE2E2",background:"#FFF5F5",color:"#EF4444",fontSize:11,fontFamily:"'Noto Sans KR',sans-serif"},
+  confirmBox:{background:"#FFF5F5",borderTop:"1px solid #FEE2E2",padding:"12px 16px"},
+  emptyBox:{textAlign:"center",padding:"40px 24px",background:"#F9FAFB",borderRadius:16,border:"1px dashed #E5E7EB"},
+  dropArea:{border:"2px dashed #BFDBFE",borderRadius:12,padding:"20px",textAlign:"center",cursor:"pointer",background:"#F8FAFF",minHeight:90,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"},
+  fileItem:{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:"#EFF6FF",borderRadius:7,marginBottom:5},
+  libCard:{background:"#fff",borderRadius:14,marginBottom:10,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,.08)",border:"2px solid transparent"},
+  libCardOn:{border:"2px solid #3B82F6",boxShadow:"0 4px 16px rgba(59,130,246,.2)"},
+  useBtn:{padding:"5px 12px",borderRadius:20,border:"1.5px solid #E5E7EB",background:"#F9FAFB",color:"#6B7280",fontSize:11,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"},
+  useBtnOn:{background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",color:"#fff",border:"1.5px solid transparent"},
+  modalOverlay:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16},
+  modal:{background:"#fff",borderRadius:20,padding:"26px 22px",width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,.3)"},
+  modalTitle:{fontSize:17,fontWeight:700,color:"#111827",marginBottom:6,fontFamily:"'Noto Serif KR',serif"},
+  modalCancelBtn:{flex:1,padding:"11px",borderRadius:10,border:"1.5px solid #E5E7EB",background:"#F9FAFB",color:"#6B7280",fontSize:13,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"},
+  modalSaveBtn:{flex:1,padding:"11px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",cursor:"pointer"},
+  spin:{width:18,height:18,border:"2px solid #E5E7EB",borderTop:"2px solid #1D4ED8",borderRadius:"50%",animation:"spin .7s linear infinite",flexShrink:0},
+  spinSm:{width:14,height:14,border:"2px solid rgba(255,255,255,.4)",borderTop:"2px solid #fff",borderRadius:"50%",animation:"spin .7s linear infinite"},
+  spinSm2:{width:14,height:14,border:"2px solid #BFDBFE",borderTop:"2px solid #1D4ED8",borderRadius:"50%",animation:"spin .7s linear infinite",flexShrink:0},
+  spinLg:{width:38,height:38,border:"3px solid #E5E7EB",borderTop:"3px solid #1D4ED8",borderRadius:"50%",animation:"spin .8s linear infinite",margin:"0 auto 14px"},
+  h2:{fontFamily:"'Noto Serif KR',serif",fontSize:15,fontWeight:700,color:"#111827",marginTop:18,marginBottom:7,paddingBottom:5,borderBottom:"2px solid #E5E7EB"},
+  h3:{fontFamily:"'Noto Serif KR',serif",fontSize:13,fontWeight:600,color:"#374151",marginTop:12,marginBottom:4},
+  para:{color:"#374151",fontSize:14,marginBottom:3,lineHeight:1.85},
+  li:{color:"#374151",fontSize:14,marginBottom:3,paddingLeft:8,lineHeight:1.85},
+  bullet:{color:"#374151",fontSize:14,marginBottom:3,paddingLeft:12,lineHeight:1.85},
+};
       <div style={sy.root}><div style={sy.orb1}/><div style={sy.orb2}/>
         <div style={sy.wrap}>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:20}}>
