@@ -801,22 +801,8 @@ ${korLines.join("\n")}
   }
 
   function makeExportText(title, refLbl, lines, content) {
-    return "==================================
-"+title+"
-본문: "+refLbl+"
-날짜: "+new Date().toLocaleDateString("ko-KR")+"
-==================================
-
-[ 본문 말씀 ]
-"+lines.join("
-")+"
-
-==================================
-
-"+content.replace(/##+ /g,"[ ").replace(/
-##/g,"
-
-[").replace(/\*\*/g,"");
+    var sep = "==================================";
+    return sep+"\n"+title+"\n"+"본문: "+refLbl+"\n"+"날짜: "+new Date().toLocaleDateString("ko-KR")+"\n"+sep+"\n\n"+"[ 본문 말씀 ]\n"+lines.join("\n")+"\n\n"+sep+"\n\n"+content.replace(/##+ /g,"[ ").replace(/\n##/g,"\n\n[").replace(/\*\*/g,"");
   }
 
   function openSaveModal(){if(!sermonOut)return;setSaveTitle(refLabel+" "+LEVELS[level].label+" 설교");setShowSaveModal(true);setSaveMsg("");}
