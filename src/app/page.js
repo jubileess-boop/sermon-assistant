@@ -1,5 +1,3 @@
-'use client'
-
 import { useState, useEffect, useRef } from "react";
 
 const VERSE_COUNTS = {
@@ -295,7 +293,6 @@ const FORMAT_PROMPTS = {
 (소그룹·가정예배용 질문 3~4개)`,
 };
 
-// ── 저장소 감지: 로컬 서버면 파일 저장, 아니면 window.storage/localStorage ──
 // ── File System Access API (Chrome/Edge 폴더 자동저장) ──
 var _dirHandle = null;
 var BACKUP_FILENAME = "설교비서_백업.json";
@@ -329,40 +326,13 @@ function downloadAsFile(filename, content) {
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-async function isLocalServer() {
-  return typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-}
-
 async function storageSave(key, value) {
   var json = JSON.stringify(value);
-  // 로컬 서버(내 컴퓨터)에서 실행 중이면 파일로 저장
-  if (await isLocalServer()) {
-    try {
-      var res = await fetch("/api/data", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: key, value: json }),
-      });
-      if (res.ok) return;
-    } catch(e) {}
-  }
-  // Claude.ai 또는 Vercel에서는 window.storage 사용
   try { if (window.storage && window.storage.set) { await window.storage.set(key, json); return; } } catch(e) {}
   try { localStorage.setItem(key, json); } catch(e) {}
 }
 
 async function storageLoad(key) {
-  // 로컬 서버(내 컴퓨터)에서 실행 중이면 파일에서 불러오기
-  if (await isLocalServer()) {
-    try {
-      var res = await fetch("/api/data?key=" + key);
-      if (res.ok) {
-        var data = await res.json();
-        if (data.value) return JSON.parse(data.value);
-      }
-    } catch(e) {}
-  }
-  // Claude.ai 또는 Vercel에서는 window.storage 사용
   try { if (window.storage && window.storage.get) { var r = await window.storage.get(key); if (r && r.value) return JSON.parse(r.value); } } catch(e) {}
   try { var v = localStorage.getItem(key); if (v) return JSON.parse(v); } catch(e) {}
   return null;
@@ -392,7 +362,7 @@ function makeRefLabel(book, fc, fv, tc, tv) {
 }
 
 async function callClaude(system, userMsg, maxTokens) {
-  var res = await fetch("/api/claude", {
+  var res = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514", max_tokens:maxTokens||400, system:system, messages:[{role:"user",content:userMsg}]}),
   });
@@ -433,9 +403,9 @@ var STORAGE_LIBRARY="library-v1";
 export default function App() {
   const [mainTab,   setMainTab]   = useState("bible");
   const [storageReady,setStorageReady]=useState(false);
-  const [storageMode, setStorageMode]  = useState(""); // "file" | "cloud"
-  const [folderName,    setFolderName]    = useState("");
-  const [folderStatus,  setFolderStatus]  = useState("");
+
+  const [folderName,       setFolderName]       = useState("");
+  const [folderStatus,     setFolderStatus]     = useState("");
   const [showFolderBanner, setShowFolderBanner] = useState(false);
   const [saveStatus,setSaveStatus]=useState("");
 
@@ -522,8 +492,7 @@ export default function App() {
 
   useEffect(function(){
     async function init(){
-      var isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-      setStorageMode(isLocal ? "file" : "cloud");
+      // 저장 모드 감지
       var s=await storageLoad(STORAGE_SERMONS);if(s&&Array.isArray(s))setSavedSermons(s);
       var l=await storageLoad(STORAGE_LIBRARY);if(l&&Array.isArray(l))setLibrary(l);
       var c=await storageLoad("chiasms-v1");if(c&&Array.isArray(c))setSavedChiasms(c);
@@ -554,9 +523,30 @@ export default function App() {
     setTotal(list.length);setLoaded(0);
     var results=[];
 
-    // JSON 성경 파일 우선 로드
+    // ── 캐시 키 생성 ──
+    var cacheKey="verse-cache:"+book+":"+fromChap+":"+fromVerse+":"+toChap+":"+toVerse;
+    var cacheCtxKey="verse-ctx:"+book+":"+fromChap+":"+fromVerse+":"+toChap+":"+toVerse;
+
+    // ── 캐시 확인 ──
+    var cached=await storageLoad(cacheKey);
+    if(cached&&cached.korLines&&cached.korLines.length>0){
+      // 캐시 히트! 즉시 표시
+      setKorLines(cached.korLines);
+      setLoaded(cached.korLines.length);
+      if(cached.engText) setEngText(cached.engText);
+      var cachedCtx=await storageLoad(cacheCtxKey);
+      if(cachedCtx){
+        setKorCtx(cachedCtx.context||"");
+        setThemes(cachedCtx.themes||[]);
+      }
+      setVLoading(false);
+      return;
+    }
+
+    // ── 캐시 없음 → JSON 파일 또는 API로 로드 ──
     var bibleKor=await loadBibleKor();
     var bibleKjv=await loadBibleKjv();
+    var engResult="";
 
     if(bibleKor){
       // JSON 파일에서 즉시 로드 (API 불필요!)
@@ -575,7 +565,7 @@ export default function App() {
           var kjvText=getKjvVerse(bibleKjv,book,jitem.chap,jitem.verse);
           if(kjvText) kjvLines.push(jitem.verse+" "+kjvText);
         }
-        if(kjvLines.length>0) setEngText(kjvLines.join("\n"));
+        if(kjvLines.length>0){engResult=kjvLines.join("\n");setEngText(engResult);}
       }
     } else {
       // JSON 없으면 API 방식
@@ -596,16 +586,22 @@ export default function App() {
           var enBook=(bookInfo?bookInfo.en:"").replace(/ /g,"+");
           var passage=parseInt(fromVerse)===parseInt(toVerse)?(enBook+"+"+fromChap+":"+fromVerse):(enBook+"+"+fromChap+":"+fromVerse+"-"+toVerse);
           var res=await fetch("https://bible-api.com/"+passage+"?translation=kjv");
-          if(res.ok){var d=await res.json();setEngText((d.text||"").trim());}
+          if(res.ok){var d=await res.json();engResult=(d.text||"").trim();setEngText(engResult);}
         }
       }catch(e3){}
     }
 
-    // 배경/주제는 AI로 생성
+    // ── 성구 캐시 저장 ──
+    try{await storageSave(cacheKey,{korLines:results.length>0?results:list.map(function(_,i){return "";}),engText:engResult});}catch(e){}
+
+    // 배경/주제는 AI로 생성 후 캐시
     try{
       var ctxRaw=await callClaude("너는 성경 구절 배경을 설명하는 도우미야. 반드시 순수 JSON만 출력해. {\"context\":\"배경 1~2줄\",\"theme\":\"키워드1,키워드2,키워드3\"}",refLabel+" 배경과 주제",250);
       var parsed=JSON.parse(ctxRaw.replace(/```json|```/g,"").trim());
-      setKorCtx(parsed.context||"");setThemes((parsed.theme||"").split(/[,，·]+/).map(function(t){return t.trim();}).filter(Boolean));
+      var ctx=parsed.context||"";
+      var thms=(parsed.theme||"").split(/[,，·]+/).map(function(t){return t.trim();}).filter(Boolean);
+      setKorCtx(ctx);setThemes(thms);
+      try{await storageSave(cacheCtxKey,{context:ctx,themes:thms});}catch(e){}
     }catch(e2){}
     setVLoading(false);
   }
@@ -739,23 +735,21 @@ ${korLines.join("\n")}
   const [backupJson,   setBackupJson]   = useState("");
   const [importJson,   setImportJson]   = useState("");
   const [importMsg,    setImportMsg]    = useState("");
-  const [importStatus, setImportStatus] = useState(""); // "ok" | "error"
+  const [importStatus, setImportStatus] = useState("");
 
   // ── 폴더 선택 ──
   async function handlePickFolder() {
     if (!FS_API_SUPPORTED) { setFolderStatus("noapi"); return; }
     var handle = await pickSaveFolder();
     if (handle) {
-      setFolderName(handle.name);
-      setFolderStatus("saved");
-      setShowFolderBanner(false);
+      setFolderName(handle.name); setFolderStatus("saved"); setShowFolderBanner(false);
       var json = JSON.stringify({version:"2.0",exportDate:new Date().toLocaleDateString("ko-KR"),sermons:savedSermons,chiasms:savedChiasms,library:library},null,2);
       await saveToFolder(json);
       setTimeout(function(){setFolderStatus("");},3000);
     }
   }
 
-  // ── 통합 자동 백업 (폴더 우선, 없으면 다운로드) ──
+  // ── 통합 자동 백업 ──
   async function autoBackup(sermons, chiasms, lib) {
     var json = JSON.stringify({version:"2.0",exportDate:new Date().toLocaleDateString("ko-KR"),sermons:sermons,chiasms:chiasms,library:lib},null,2);
     if (_dirHandle) {
@@ -766,17 +760,9 @@ ${korLines.join("\n")}
   }
 
   function makeBackupJson() {
-    var data = {
-      version: "2.0",
-      exportDate: new Date().toLocaleDateString("ko-KR"),
-      sermons: savedSermons,
-      chiasms: savedChiasms,
-      library: library,
-    };
-    return JSON.stringify(data, null, 2);
+    return JSON.stringify({version:"2.0",exportDate:new Date().toLocaleDateString("ko-KR"),sermons:savedSermons,chiasms:savedChiasms,library:library},null,2);
   }
 
-  // ── 수동 백업 ──
   async function downloadBackup() {
     var json = makeBackupJson();
     if (_dirHandle) {
@@ -788,7 +774,6 @@ ${korLines.join("\n")}
     setImportMsg("✅ 파일이 다운로드되었습니다!"); setImportStatus("ok");
   }
 
-  // ── 파일에서 복원 ──
   var importFileRef = useRef();
   function handleImportFile(e) {
     var file = e.target.files && e.target.files[0]; if (!file) return;
@@ -797,23 +782,12 @@ ${korLines.join("\n")}
       setImportMsg(""); setImportStatus("");
       try {
         var data = JSON.parse(ev.target.result);
-        if (data.sermons && Array.isArray(data.sermons)) {
-          var merged = data.sermons.concat(savedSermons.filter(function(s){ return !data.sermons.find(function(d){return d.id===s.id;}); }));
-          setSavedSermons(merged); await storageSave(STORAGE_SERMONS, merged);
-        }
-        if (data.chiasms && Array.isArray(data.chiasms)) {
-          var mergedC = data.chiasms.concat(savedChiasms.filter(function(c){ return !data.chiasms.find(function(d){return d.id===c.id;}); }));
-          setSavedChiasms(mergedC); await storageSave("chiasms-v1", mergedC);
-        }
-        if (data.library && Array.isArray(data.library)) {
-          var mergedL = data.library.concat(library.filter(function(l){ return !data.library.find(function(d){return d.id===l.id;}); }));
-          setLibrary(mergedL); await storageSave(STORAGE_LIBRARY, mergedL);
-        }
+        if (data.sermons&&Array.isArray(data.sermons)) { var m=data.sermons.concat(savedSermons.filter(function(s){return !data.sermons.find(function(d){return d.id===s.id;});})); setSavedSermons(m); await storageSave(STORAGE_SERMONS,m); }
+        if (data.chiasms&&Array.isArray(data.chiasms)) { var mc=data.chiasms.concat(savedChiasms.filter(function(c){return !data.chiasms.find(function(d){return d.id===c.id;});})); setSavedChiasms(mc); await storageSave("chiasms-v1",mc); }
+        if (data.library&&Array.isArray(data.library)) { var ml=data.library.concat(library.filter(function(l){return !data.library.find(function(d){return d.id===l.id;});})); setLibrary(ml); await storageSave(STORAGE_LIBRARY,ml); }
         setImportMsg("✅ 복원 완료! 설교 "+((data.sermons||[]).length)+"편, 키아즘 "+((data.chiasms||[]).length)+"개, 라이브러리 "+((data.library||[]).length)+"개.");
         setImportStatus("ok");
-      } catch(err) {
-        setImportMsg("❌ 오류: 올바른 백업 파일이 아닙니다."); setImportStatus("error");
-      }
+      } catch(err) { setImportMsg("❌ 오류: 올바른 백업 파일이 아닙니다."); setImportStatus("error"); }
       e.target.value = "";
     };
     reader.readAsText(file, "UTF-8");
@@ -866,6 +840,18 @@ ${korLines.join("\n")}
       + content.replace(/##+ /g,"[ ").replace(/\n##/g,"\n\n[").replace(/\*\*/g,"");
   }
 
+  // ── 전체 초기화 (설교 저장 완료 후) ──
+  function resetAll() {
+    setBook(""); setFromChap(""); setFromVerse(""); setToChap(""); setToVerse("");
+    setKorLines([]); setEngText(""); setKorCtx(""); setThemes([]);
+    setSermonOut(""); setVError(""); setLoaded(0); setTotal(0);
+    setChiasmTitle(""); setChiasmFrame("7"); setChiasmCenter("");
+    setChiasmStructure({}); setChiasmAnalysis(""); setChiasmMemo("");
+    setChiasmSermonOut(""); setChiasmSermonLevel("adult");
+    setShowExport(false); setShowChiasmExport(false);
+    setShowChiasm(false);
+  }
+
   function openSaveModal(){if(!sermonOut)return;setSaveTitle(refLabel+" "+LEVELS[level].label+" 설교");setShowSaveModal(true);setSaveMsg("");}
   async function saveSermon(){
     if(!saveTitle.trim()){setSaveMsg("제목을 입력해주세요.");return;}
@@ -878,7 +864,9 @@ ${korLines.join("\n")}
       await autoBackup(updated, savedChiasms, library);
       setTimeout(function(){setSaveStatus("");},3000);
     }catch(e){setSaveStatus("error");}
-    setShowSaveModal(false);setSaveTitle("");setSaveMsg("");setMainTab("saved");
+    setShowSaveModal(false);setSaveTitle("");setSaveMsg("");
+    resetAll();
+    setMainTab("bible");
   }
   async function deleteSermon(id){
     var updated=savedSermons.filter(function(s){return s.id!==id;});setSavedSermons(updated);await storageSave(STORAGE_SERMONS,updated);
@@ -1025,15 +1013,11 @@ ${korLines.join("\n")}
           <div style={sy.cross}>✝</div>
           <h1 style={sy.title}>설교 비서</h1>
           <p style={sy.sub}>Claude AI · 연령대별 맞춤 설교 · 키아즘 연구 · 영구 저장</p>
-          {storageMode==="file"&&<div style={{marginTop:6,display:"inline-block",padding:"3px 14px",borderRadius:20,background:"rgba(20,83,45,.8)",color:"#86EFAC",fontSize:11,fontWeight:700}}>File Mode</div>}
-          {storageMode==="cloud"&&<div style={{marginTop:6,display:"inline-block",padding:"3px 14px",borderRadius:20,background:"rgba(30,58,138,.8)",color:"#93C5FD",fontSize:11,fontWeight:700}}>Cloud Mode</div>}
           {saveStatus==="saving"&&<div style={sy.saveBar}>💾 저장 중...</div>}
           {saveStatus==="saved"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(20,83,45,.9)",color:"#86EFAC"})}>✅ 저장 완료! {_dirHandle?"📁 "+folderName+" 폴더에 자동 저장":"⬇️ 파일 다운로드됨"}</div>}
           {saveStatus==="error"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(153,27,27,.9)",color:"#FCA5A5"})}>❌ 저장 오류</div>}
           {folderStatus==="saved"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(20,83,45,.9)",color:"#86EFAC"})}>📁 {folderName} 폴더에 저장 완료!</div>}
           {folderStatus==="noapi"&&<div style={Object.assign({},sy.saveBar,{background:"rgba(120,53,15,.9)",color:"#FDE68A"})}>⚠️ 이 브라우저는 폴더 저장을 지원하지 않습니다. Chrome/Edge를 사용해 주세요.</div>}
-
-          {/* 폴더 저장 배너 */}
           {showFolderBanner&&(
             <div style={{marginTop:12,padding:"12px 18px",background:"rgba(255,255,255,.10)",borderRadius:14,border:"1.5px solid rgba(255,255,255,.25)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
               <span style={{fontSize:20}}>📁</span>
@@ -1044,12 +1028,10 @@ ${korLines.join("\n")}
                 }
               </div>
               <div style={{display:"flex",gap:8,flexShrink:0}}>
-                <button style={{padding:"8px 16px",borderRadius:20,border:"none",background:"linear-gradient(135deg,#1D4ED8,#6366F1)",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}
-                  onClick={handlePickFolder}>
+                <button style={{padding:"8px 16px",borderRadius:20,border:"none",background:"linear-gradient(135deg,#1D4ED8,#6366F1)",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={handlePickFolder}>
                   📁 {folderName?"폴더 다시 연결":"저장 폴더 선택"}
                 </button>
-                <button style={{padding:"8px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.3)",background:"transparent",color:"#94A3B8",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif"}}
-                  onClick={function(){setShowFolderBanner(false);}}>✕</button>
+                <button style={{padding:"8px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.3)",background:"transparent",color:"#94A3B8",fontSize:12,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={function(){setShowFolderBanner(false);}}>✕</button>
               </div>
             </div>
           )}
@@ -1140,6 +1122,7 @@ ${korLines.join("\n")}
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                     <span style={sy.verseRef}>{refLabel||"말씀 불러오는 중..."}</span>
                     {!vLoading&&engText&&<span style={sy.kjvBadge}>KJV ✓</span>}
+                    {!vLoading&&korLines.length>0&&<span style={{background:"rgba(134,239,172,.25)",color:"#86EFAC",fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:600}}>⚡ 저장됨</span>}
                     {vLoading&&<span style={{color:"rgba(255,255,255,.7)",fontSize:12}}>({loaded}/{total}절)</span>}
                   </div>
                   {!vLoading&&korLines.length>0&&(<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{[["both","한·영"],["kor","한국어"],["eng","English"]].map(function(item){var v=item[0];var l=item[1];return <button key={v} style={Object.assign({},sy.langBtn,showLang===v?sy.langBtnOn:{})} onClick={function(){setShowLang(v);}}>{l}</button>;})}</div>)}
@@ -1466,23 +1449,13 @@ ${korLines.join("\n")}
                   {/* 폴더 자동 저장 */}
                   {FS_API_SUPPORTED&&(
                     <div style={{background:_dirHandle?"#F0FDF4":"#EFF6FF",borderRadius:12,padding:"16px",marginBottom:12,border:"1.5px solid "+(_dirHandle?"#BBF7D0":"#BFDBFE")}}>
-                      <div style={{fontSize:13,fontWeight:700,color:_dirHandle?"#15803D":"#1D4ED8",marginBottom:6}}>
-                        {_dirHandle?"📁 폴더 자동 저장 연결됨":"📁 폴더 자동 저장 (권장)"}
-                      </div>
+                      <div style={{fontSize:13,fontWeight:700,color:_dirHandle?"#15803D":"#1D4ED8",marginBottom:6}}>{_dirHandle?"📁 폴더 자동 저장 연결됨":"📁 폴더 자동 저장 (권장)"}</div>
                       {_dirHandle
-                        ?<div>
-                           <p style={{fontSize:13,color:"#15803D",fontWeight:600,marginBottom:8}}>✅ [{folderName}] 폴더에 자동 저장 중</p>
-                           <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.7}}>설교/키아즘을 저장할 때마다 이 폴더의 <b>설교비서_백업.json</b> 파일이 자동 업데이트됩니다.</p>
-                           <button style={{padding:"8px 18px",borderRadius:10,border:"1.5px solid #BBF7D0",background:"#fff",color:"#15803D",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={handlePickFolder}>📁 폴더 변경</button>
-                         </div>
-                        :<div>
-                           <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.7}}>폴더를 한 번만 선택하면 저장할 때마다 자동으로 그 폴더에 저장됩니다.<br/><b>⚠️ 페이지를 새로 열면 폴더를 다시 연결해야 합니다.</b> (브라우저 보안 정책)</p>
-                           <button style={{padding:"10px 24px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",color:"#fff",fontSize:14,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={handlePickFolder}>📁 저장 폴더 선택하기</button>
-                         </div>
+                        ?<div><p style={{fontSize:13,color:"#15803D",fontWeight:600,marginBottom:8}}>✅ [{folderName}] 폴더에 자동 저장 중</p><p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.7}}>설교/키아즘을 저장할 때마다 이 폴더의 <b>설교비서_백업.json</b> 파일이 자동 업데이트됩니다.</p><button style={{padding:"8px 18px",borderRadius:10,border:"1.5px solid #BBF7D0",background:"#fff",color:"#15803D",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={handlePickFolder}>📁 폴더 변경</button></div>
+                        :<div><p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.7}}>폴더를 한 번만 선택하면 저장할 때마다 자동으로 그 폴더에 저장됩니다.<br/><b>⚠️ 페이지를 새로 열면 폴더를 다시 연결해야 합니다.</b> (브라우저 보안 정책)</p><button style={{padding:"10px 24px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1D4ED8,#4F46E5)",color:"#fff",fontSize:14,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={handlePickFolder}>📁 저장 폴더 선택하기</button></div>
                       }
                     </div>
                   )}
-
                   {/* 수동 백업 */}
                   <div style={{background:"#F8FAFF",borderRadius:12,padding:"14px",marginBottom:12,border:"1.5px solid #E5E7EB"}}>
                     <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:6}}>⬇️ 수동 백업</div>
@@ -1491,17 +1464,13 @@ ${korLines.join("\n")}
                       {_dirHandle?"📁 지금 저장 ("+savedSermons.length+"편 · "+savedChiasms.length+"개 키아즘)":"⬇️ 파일로 다운로드 ("+savedSermons.length+"편 · "+savedChiasms.length+"개 키아즘)"}
                     </button>
                   </div>
-
                   {/* 파일에서 복원 */}
                   <div style={{background:"#F0FDF4",borderRadius:12,padding:"14px",marginBottom:12,border:"1.5px solid #BBF7D0"}}>
                     <div style={{fontSize:13,fontWeight:700,color:"#15803D",marginBottom:6}}>📂 파일에서 복원</div>
                     <p style={{fontSize:12,color:"#6B7280",marginBottom:10,lineHeight:1.7}}>이전에 저장한 <b>.json 백업 파일</b>을 선택하면 자동으로 복원됩니다.</p>
                     <input ref={importFileRef} type="file" accept=".json" style={{display:"none"}} onChange={handleImportFile}/>
-                    <button style={{padding:"9px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#15803D,#16A34A)",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={function(){if(importFileRef.current)importFileRef.current.click();}}>
-                      📂 백업 파일 선택해서 복원
-                    </button>
+                    <button style={{padding:"9px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#15803D,#16A34A)",color:"#fff",fontSize:13,fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={function(){if(importFileRef.current)importFileRef.current.click();}}>📂 백업 파일 선택해서 복원</button>
                   </div>
-
                   {/* 텍스트 붙여넣기 (보조) */}
                   <div style={{background:"#FAFAFA",borderRadius:12,padding:"14px",border:"1.5px solid #E5E7EB"}}>
                     <div style={{fontSize:12,fontWeight:700,color:"#9CA3AF",marginBottom:6}}>📋 텍스트 붙여넣기 (보조 수단)</div>
@@ -1510,10 +1479,7 @@ ${korLines.join("\n")}
                       value={importJson} onChange={function(e){setImportJson(e.target.value);setImportMsg("");}}/>
                     {importJson.trim()&&<button style={{padding:"6px 16px",borderRadius:8,border:"none",background:"#6B7280",color:"#fff",fontSize:12,fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}} onClick={importFromJson}>텍스트로 복원</button>}
                   </div>
-
-                  {importMsg&&(
-                    <p style={{fontSize:13,marginTop:10,padding:"10px 14px",borderRadius:10,background:importStatus==="ok"?"#F0FDF4":"#FFF5F5",color:importStatus==="ok"?"#15803D":"#DC2626",fontWeight:600,border:"1px solid "+(importStatus==="ok"?"#BBF7D0":"#FEE2E2")}}>{importMsg}</p>
-                  )}
+                  {importMsg&&(<p style={{fontSize:13,marginTop:10,padding:"10px 14px",borderRadius:10,background:importStatus==="ok"?"#F0FDF4":"#FFF5F5",color:importStatus==="ok"?"#15803D":"#DC2626",fontWeight:600,border:"1px solid "+(importStatus==="ok"?"#BBF7D0":"#FEE2E2")}}>{importMsg}</p>)}
                 </div>
               )}
 
